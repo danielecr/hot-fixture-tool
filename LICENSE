@@ -1,0 +1,53 @@
+Hot Fixture Tool License
+
+Copyright (c) 2024 Daniele Cruciani
+
+Permission is hereby granted to any person obtaining a copy of this software and associated documentation files (the "Software"), to inspect, study, and contribute to the Software, subject to the following conditions:
+
+## Permitted Uses
+
+1. **Inspection and Study**: You may view, read, and analyze the source code for educational, research, or evaluation purposes.
+
+2. **Contributions**: You may submit bug reports, feature requests, and code contributions (pull requests) to improve the Software.
+
+3. **Non-Commercial Personal Use**: You may use the Software for personal, non-commercial purposes only.
+
+4. **Testing and Evaluation**: You may test and evaluate the Software in non-production environments.
+
+## Prohibited Uses
+
+1. **Commercial Use**: You may NOT use the Software for any commercial purpose, including but not limited to:
+   - Operating the Software in a production environment for business purposes
+   - Selling or licensing the Software or any derivative works
+   - Using the Software as part of a commercial product or service
+
+2. **Distribution**: You may NOT distribute, sublicense, or make the Software available to third parties without explicit written permission from the copyright holder.
+
+3. **Derivative Works**: You may NOT create or distribute derivative works based on the Software without explicit written permission from the copyright holder.
+
+## Conditions
+
+1. **Attribution**: Any permitted use must include proper attribution to the original author.
+
+2. **Contribution Rights**: By submitting contributions to this project, you grant the copyright holder a perpetual, worldwide, non-exclusive, royalty-free license to use, modify, and distribute your contributions.
+
+3. **No Warranty**: The Software is provided "AS IS", without warranty of any kind, express or implied.
+
+## Commercial Licensing
+
+If you are interested in using this Software for commercial purposes, please contact the copyright holder to discuss licensing terms. The author is open to:
+
+- Commercial licensing agreements
+- Sponsorship arrangements
+- Partnership opportunities
+- Custom development services
+
+For commercial inquiries, please contact: [daniele@smartango.com]
+
+## Future Open Source
+
+The copyright holder reserves the right to release this Software under an open source license in the future, at their sole discretion.
+
+## Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

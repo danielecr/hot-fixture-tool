@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # Redis for user keys and JWT storage
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass redis_secure_password
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - hfitd-network
+
+  # Hot Fixture Tool Daemon
+  hfitd:
+    build:
+      context: ./hfitd
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # Server Configuration
+      SERVER_ADDRESS: ":8080"
+      
+      # Database Configuration (connect to your existing database)
+      DB_HOST: your_db_host
+      DB_PORT: 5432
+      DB_USER: your_db_user
+      DB_PASSWORD: your_db_password
+      DB_NAME: your_database_name
+      
+      # Redis Configuration
+      REDIS_URL: "redis://:redis_secure_password@redis:6379"
+      
+      # Authentication Configuration
+      JWT_SECRET: "production-jwt-secret-change-this-to-something-very-secure-and-random"
+      
+      # Admin Configuration
+      HFITD_SOCKET_PATH: "/tmp/hfitd/hfitd.sock"
+    volumes:
+      # Unix socket for CLI administration
+      - hfitd_socket:/tmp/hfitd
+      # Mount data directory for file operations
+      - ./hotfixtool_data:/app/data:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - hfitd-network
+
+volumes:
+  redis_data:
+    driver: local
+  hfitd_socket:
+    driver: local
+
+networks:
+  hfitd-network:
+    driver: bridge
+

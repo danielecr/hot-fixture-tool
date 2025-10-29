@@ -1,0 +1,7 @@
+# Example configuration for hfit CLI
+# This file shows the format that will be created in ~/.hfit/config
+# when you run: hfit config <host> <email> <private_key_path>
+
+HFITD_HOST=https://localhost:8080
+EMAIL=test@example.com
+PUBLIC_KEY=/path/to/private_key.pem
