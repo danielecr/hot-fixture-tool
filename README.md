@@ -29,3 +29,7 @@ Features:
 - admin user- public key
 - simple admin interface based on vanillaJs
 
+## Plan
+
+First release has no ACL control, all users has access to all resources
+
