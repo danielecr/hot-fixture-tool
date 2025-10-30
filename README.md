@@ -97,9 +97,44 @@ Service API:
 - list DBS
 - list tables
 - export table definition
-- export table data + where filter
+- export table data + where filter (with streaming NDJSON support)
 - list accessible folder
 - list files with filter (stream LDJSON)
+
+### 🚀 Streaming Database Rows (New Feature)
+
+Database table rows now support **streaming NDJSON format** for optimal performance with large datasets:
+
+**Traditional JSON Response:**
+```bash
+curl -H 'Authorization: Bearer $JWT_TOKEN' \
+     'http://localhost:8080/db/mysql/mydb/table/users/rows'
+```
+
+**Streaming NDJSON Response (Optimized):**
+```bash
+curl -H 'Authorization: Bearer $JWT_TOKEN' \
+     -H 'Accept: application/x-json-stream' \
+     'http://localhost:8080/db/mysql/mydb/table/users/rows'
+```
+
+**Advanced Filtering with SQL injection protection:**
+```bash
+# WHERE clause filtering
+curl -H 'Accept: application/x-json-stream' \
+     'http://localhost:8080/db/mysql/mydb/table/users/rows?filterpart=WHERE age > 25'
+
+# Complex queries with ORDER BY and LIMIT
+curl -H 'Accept: application/x-json-stream' \
+     'http://localhost:8080/db/postgres/mydb/table/orders/rows?filterpart=WHERE status = "active" ORDER BY created_at DESC LIMIT 100'
+```
+
+**Key Benefits:**
+- **O(1) Memory Usage**: Constant memory regardless of result size
+- **Real-time Streaming**: First rows appear immediately  
+- **SQL Injection Protection**: Safe filterpart parameter validation
+- **Multi-DBMS Support**: Works with MySQL, PostgreSQL, and more
+- **Enterprise Scalability**: Handles millions of rows efficiently
 
 Client:
 - interactively run all API provided by service 

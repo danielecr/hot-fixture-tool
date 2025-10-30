@@ -43,6 +43,7 @@ API:
  /db/{dbms}/dbs
  /db/{dbms}/{dbid}/tables
  /db/{dbms}/{dbid}/table/{tableid}/rows
+ /db/{dbms}/{dbid}/table/{tableid}/rows?filterpart="WHERE id > 100 ORDER BY name DESC"
  /files/{volume}/list
  /files/{volume}/download?path=
  /files/{volume}/download?folder=<folder>&filter[]=name:*.config
@@ -153,20 +154,35 @@ func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminSe
 		dbid := vars["dbid"]
 		tableid := vars["tableid"]
 
+		// Get filterpart parameter for SQL filtering
+		filterpart := r.URL.Query().Get("filterpart")
+
 		conn, err := databaseManager.GetConnection(dbms)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		rows, err := getTableRows(conn, dbms, dbid, tableid)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		// Check Accept header to determine response format
+		acceptHeader := r.Header.Get("Accept")
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(rows)
+		if acceptHeader == "application/x-json-stream" {
+			// Stream as NDJSON
+			if err := streamTableRows(w, conn, dbms, dbid, tableid, filterpart); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			// Traditional JSON array response (backward compatibility)
+			rows, err := getTableRowsWithFilter(conn, dbms, dbid, tableid, filterpart)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(rows)
+		}
 	}).Methods("GET")
 
 	// HEAD methods for resource existence checking
@@ -1106,6 +1122,59 @@ func getTables(conn *sql.DB, dbms string, dbid string) ([]string, error) {
 }
 
 /*
+* validateFilterPart validates and sanitizes the filterpart parameter to prevent SQL injection.
+* Returns the sanitized filter or an error if potentially dangerous content is detected.
+ */
+func validateFilterPart(filterpart string) (string, error) {
+	if filterpart == "" {
+		return "", nil
+	}
+
+	// Convert to lowercase for case-insensitive checking
+	lower := strings.ToLower(strings.TrimSpace(filterpart))
+
+	// List of dangerous SQL keywords/patterns that should be blocked
+	dangerousPatterns := []string{
+		"insert", "update", "delete", "drop", "create", "alter", "truncate",
+		"grant", "revoke", "exec", "execute", "sp_", "xp_", "union",
+		"information_schema", "sys.", "pg_", "mysql.", "--", "/*", "*/",
+		";", "@@", "char(", "nchar(", "varchar(", "nvarchar(",
+		"waitfor", "delay", "benchmark(", "sleep(", "load_file(",
+		"into outfile", "into dumpfile", "script", "javascript", "vbscript",
+	}
+
+	// Check for dangerous patterns
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(lower, pattern) {
+			return "", fmt.Errorf("potentially dangerous SQL content detected: %s", pattern)
+		}
+	}
+
+	// Only allow safe SQL clauses (WHERE, ORDER BY, LIMIT, HAVING, GROUP BY)
+	allowedPrefixes := []string{"where ", "order by ", "limit ", "having ", "group by "}
+	hasValidPrefix := false
+	for _, prefix := range allowedPrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			hasValidPrefix = true
+			break
+		}
+	}
+
+	if !hasValidPrefix {
+		return "", fmt.Errorf("filterpart must start with WHERE, ORDER BY, LIMIT, HAVING, or GROUP BY")
+	}
+
+	// Additional validation: check for balanced quotes
+	singleQuotes := strings.Count(filterpart, "'")
+	doubleQuotes := strings.Count(filterpart, "\"")
+	if singleQuotes%2 != 0 || doubleQuotes%2 != 0 {
+		return "", fmt.Errorf("unbalanced quotes in filterpart")
+	}
+
+	return strings.TrimSpace(filterpart), nil
+}
+
+/*
 * getTableRows retrieves the rows from a specific table.
  */
 func getTableRows(conn *sql.DB, dbms string, dbid string, tableid string) ([]map[string]interface{}, error) {
@@ -1152,4 +1221,156 @@ func getTableRows(conn *sql.DB, dbms string, dbid string, tableid string) ([]map
 	}
 
 	return result, nil
+}
+
+/*
+* getTableRowsWithFilter retrieves rows from a specific table with optional filtering.
+* Maintains backward compatibility with traditional JSON array response.
+ */
+func getTableRowsWithFilter(conn *sql.DB, dbms string, dbid string, tableid string, filterpart string) ([]map[string]interface{}, error) {
+	// Build the base query
+	baseQuery := fmt.Sprintf("SELECT * FROM %s", tableid)
+
+	// Add filter part if provided and validated
+	var finalQuery string
+	if filterpart != "" {
+		validatedFilter, err := validateFilterPart(filterpart)
+		if err != nil {
+			return nil, fmt.Errorf("invalid filterpart: %v", err)
+		}
+		finalQuery = fmt.Sprintf("%s %s", baseQuery, validatedFilter)
+	} else {
+		// Default limit to prevent accidental massive queries
+		finalQuery = fmt.Sprintf("%s LIMIT 100", baseQuery)
+	}
+
+	rows, err := conn.Query(finalQuery)
+	if err != nil {
+		return nil, fmt.Errorf("query execution failed: %v", err)
+	}
+	defer rows.Close()
+
+	// Get column names
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get columns: %v", err)
+	}
+
+	var result []map[string]interface{}
+
+	for rows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+
+		for i := range columns {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return nil, err
+		}
+
+		row := make(map[string]interface{})
+		for i, col := range columns {
+			val := values[i]
+			if b, ok := val.([]byte); ok {
+				row[col] = string(b)
+			} else {
+				row[col] = val
+			}
+		}
+
+		result = append(result, row)
+	}
+
+	return result, nil
+}
+
+/*
+* streamTableRows streams database table rows as NDJSON format with optional filtering.
+* Uses O(1) memory by processing one row at a time.
+ */
+func streamTableRows(w http.ResponseWriter, conn *sql.DB, dbms string, dbid string, tableid string, filterpart string) error {
+	// Build the base query
+	baseQuery := fmt.Sprintf("SELECT * FROM %s", tableid)
+
+	// Add filter part if provided and validated
+	var finalQuery string
+	if filterpart != "" {
+		validatedFilter, err := validateFilterPart(filterpart)
+		if err != nil {
+			return fmt.Errorf("invalid filterpart: %v", err)
+		}
+		finalQuery = fmt.Sprintf("%s %s", baseQuery, validatedFilter)
+	} else {
+		// Default limit to prevent accidental massive queries
+		finalQuery = fmt.Sprintf("%s LIMIT 1000", baseQuery)
+	}
+
+	rows, err := conn.Query(finalQuery)
+	if err != nil {
+		return fmt.Errorf("query execution failed: %v", err)
+	}
+	defer rows.Close()
+
+	// Get column names
+	columns, err := rows.Columns()
+	if err != nil {
+		return fmt.Errorf("failed to get columns: %v", err)
+	}
+
+	// Set response headers for NDJSON streaming
+	w.Header().Set("Content-Type", "application/x-json-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Create a flusher for real-time streaming
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return fmt.Errorf("streaming unsupported")
+	}
+
+	encoder := json.NewEncoder(w)
+
+	// Stream each row as a separate JSON object
+	for rows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+
+		for i := range columns {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			// Log error but continue with next row
+			fmt.Fprintf(w, `{"error":"row scan failed: %v"}`+"\n", err)
+			flusher.Flush()
+			continue
+		}
+
+		row := make(map[string]interface{})
+		for i, col := range columns {
+			val := values[i]
+			if b, ok := val.([]byte); ok {
+				row[col] = string(b)
+			} else {
+				row[col] = val
+			}
+		}
+
+		// Encode and stream this row
+		if err := encoder.Encode(row); err != nil {
+			return fmt.Errorf("failed to encode row: %v", err)
+		}
+
+		// Flush immediately for real-time streaming
+		flusher.Flush()
+	}
+
+	// Check for any errors from iterating over rows
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error during row iteration: %v", err)
+	}
+
+	return nil
 }
