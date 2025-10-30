@@ -1,3 +1,13 @@
+/*
+ * Hot Fixture Tool Daemon - CLI Administration Tool
+ * Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>
+ *
+ * This file is part of the Hot Fixture Tool project.
+ * GitHub: https://github.com/danielecr/hot-fixture-tool
+ *
+ * Licensed under the terms specified in the LICENSE file.
+ */
+
 // hfitd-cli is a command line tool for administering hfitd server
 package main
 
@@ -35,6 +45,9 @@ func main() {
 	command := os.Args[1]
 
 	switch command {
+	case "help", "-h", "--help":
+		printUsage()
+
 	case "adduser":
 		if len(os.Args) != 4 {
 			fmt.Println("Usage: hfitd-cli adduser <email> <public_key_file_or_content>")
@@ -49,16 +62,20 @@ func main() {
 		handleGetJWTPublicKey(socketPath)
 
 	default:
-		fmt.Printf("Unknown command: %s\n", command)
-		printUsage()
+		fmt.Printf("Error: Unknown command '%s'\n\n", command)
+		fmt.Printf("Run 'hfitd-cli help' for usage information.\n")
+		fmt.Printf("For support, contact: Daniele Cruciani <daniele@smartango.com>\n")
 		os.Exit(1)
 	}
 }
 
 func printUsage() {
 	fmt.Println("hfitd-cli - Administration tool for Hot Fixture Tool Daemon")
+	fmt.Println("Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>")
+	fmt.Println("GitHub: https://github.com/danielecr/hot-fixture-tool")
 	fmt.Println()
 	fmt.Println("Usage:")
+	fmt.Println("  hfitd-cli help                                      Show this help message")
 	fmt.Println("  hfitd-cli adduser <email> <public_key_file_or_content>")
 	fmt.Println("  hfitd-cli renew-jwt")
 	fmt.Println("  hfitd-cli get-jwt-public-key")
@@ -69,6 +86,9 @@ func printUsage() {
 	fmt.Println("Examples:")
 	fmt.Println("  hfitd-cli adduser alice@example.com alice_public_key.pem")
 	fmt.Println("  hfitd-cli adduser bob@company.com \"-----BEGIN PUBLIC KEY-----...\"")
+	fmt.Println()
+	fmt.Println("For support, contact: Daniele Cruciani <daniele@smartango.com>")
+	fmt.Println("Project repository: https://github.com/danielecr/hot-fixture-tool")
 	fmt.Println("  hfitd-cli renew-jwt")
 }
 

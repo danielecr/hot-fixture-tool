@@ -1,3 +1,13 @@
+/*
+ * Hot Fixture Tool CLI - Configuration Management
+ * Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>
+ * 
+ * This file is part of the Hot Fixture Tool project.
+ * GitHub: https://github.com/danielecr/hot-fixture-tool
+ * 
+ * Licensed under the terms specified in the LICENSE file.
+ */
+
 // Package config provides configuration management for the hfit CLI tool
 package config
 

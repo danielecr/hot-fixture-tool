@@ -1,3 +1,13 @@
+/*
+ * Hot Fixture Tool CLI - API Client
+ * Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>
+ * 
+ * This file is part of the Hot Fixture Tool project.
+ * GitHub: https://github.com/danielecr/hot-fixture-tool
+ * 
+ * Licensed under the terms specified in the LICENSE file.
+ */
+
 // Package api provides API client functionality for the hfit CLI tool
 package api
 

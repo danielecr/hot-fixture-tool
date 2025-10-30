@@ -1,16 +1,37 @@
+/*
+ * Hot Fixture Tool CLI
+ * Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>
+ *
+ * This file is part of the Hot Fixture Tool project.
+ * GitHub: https://github.com/danielecr/hot-fixture-tool
+ *
+ * Licensed under the terms specified in the LICENSE file.
+ */
+
 // Package main provides the hfit CLI tool for interacting with hfitd
 package main
 
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 
 	"hfit/api"
 	"hfit/auth"
 	"hfit/config"
 )
+
+// fatalError prints an error message with support contact information and exits
+func fatalError(msg string, err error) {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s: %v\n", msg, err)
+	} else {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+	}
+	fmt.Fprintf(os.Stderr, "\nFor support, contact: Daniele Cruciani <daniele@smartango.com>\n")
+	fmt.Fprintf(os.Stderr, "Project repository: https://github.com/danielecr/hot-fixture-tool\n")
+	os.Exit(1)
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -25,6 +46,8 @@ func main() {
 		handleConfigCommand()
 	case "login":
 		handleLoginCommand()
+	case "help", "-h", "--help":
+		printUsage()
 	case "dbs":
 		handleDbsCommand()
 	case "tables":
@@ -36,16 +59,20 @@ func main() {
 	case "download":
 		handleDownloadCommand()
 	default:
-		fmt.Printf("Unknown command: %s\n", command)
-		printUsage()
+		fmt.Printf("Error: Unknown command '%s'\n\n", command)
+		fmt.Printf("Run 'hfit help' for usage information.\n")
+		fmt.Printf("For support, contact: Daniele Cruciani <daniele@smartango.com>\n")
 		os.Exit(1)
 	}
 }
 
 func printUsage() {
 	fmt.Println("hfit - Hot Fixture Tool CLI")
+	fmt.Println("Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>")
+	fmt.Println("GitHub: https://github.com/danielecr/hot-fixture-tool")
 	fmt.Println()
 	fmt.Println("Usage:")
+	fmt.Println("  hfit help                                           Show this help message")
 	fmt.Println("  hfit config <hfitd_host> <email> <public_key_path>  Configure connection")
 	fmt.Println("  hfit login                                          Authenticate and get JWT token")
 	fmt.Println("  hfit dbs                                           List databases")
@@ -56,6 +83,9 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("Configuration is stored in ~/.hfit/config")
 	fmt.Println("JWT token is stored in ~/.hfit/token")
+	fmt.Println()
+	fmt.Println("For support, contact: Daniele Cruciani <daniele@smartango.com>")
+	fmt.Println("Project repository: https://github.com/danielecr/hot-fixture-tool")
 }
 
 func handleConfigCommand() {
@@ -71,7 +101,7 @@ func handleConfigCommand() {
 	}
 
 	if err := config.SaveConfig(cfg); err != nil {
-		log.Fatalf("Failed to save config: %v", err)
+		fatalError("Failed to save config", err)
 	}
 
 	fmt.Println("Configuration saved successfully")
@@ -80,16 +110,16 @@ func handleConfigCommand() {
 func handleLoginCommand() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		fatalError("Failed to load config", err)
 	}
 
 	token, err := auth.AuthenticateWithChallenge(cfg.HfitdHost, cfg.Email, cfg.PublicKey)
 	if err != nil {
-		log.Fatalf("Authentication failed: %v", err)
+		fatalError("Authentication failed", err)
 	}
 
 	if err := config.SaveToken(token); err != nil {
-		log.Fatalf("Failed to save token: %v", err)
+		fatalError("Failed to save token", err)
 	}
 
 	fmt.Println("Authentication successful, token saved")
@@ -100,7 +130,7 @@ func handleDbsCommand() {
 
 	databases, err := client.ListDatabases()
 	if err != nil {
-		log.Fatalf("Failed to list databases: %v", err)
+		fatalError("Failed to list databases", err)
 	}
 
 	printJSON(databases)
@@ -117,7 +147,7 @@ func handleTablesCommand() {
 
 	tables, err := client.ListTables(dbID)
 	if err != nil {
-		log.Fatalf("Failed to list tables: %v", err)
+		fatalError("Failed to list tables", err)
 	}
 
 	printJSON(tables)
@@ -135,7 +165,7 @@ func handleRowsCommand() {
 
 	rows, err := client.ListRows(dbID, tableID)
 	if err != nil {
-		log.Fatalf("Failed to list rows: %v", err)
+		fatalError("Failed to list rows", err)
 	}
 
 	printJSON(rows)
@@ -146,7 +176,7 @@ func handleFilesCommand() {
 
 	files, err := client.ListFiles()
 	if err != nil {
-		log.Fatalf("Failed to list files: %v", err)
+		fatalError("Failed to list files", err)
 	}
 
 	printJSON(files)
@@ -163,7 +193,7 @@ func handleDownloadCommand() {
 
 	data, err := client.DownloadFile(filePath)
 	if err != nil {
-		log.Fatalf("Failed to download file: %v", err)
+		fatalError("Failed to download file", err)
 	}
 
 	fmt.Print(string(data))
@@ -172,12 +202,12 @@ func handleDownloadCommand() {
 func getAuthenticatedClient() *api.Client {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		fatalError("Failed to load config", err)
 	}
 
 	token, err := config.LoadToken()
 	if err != nil {
-		log.Fatalf("Failed to load token (please run 'hfit login' first): %v", err)
+		fatalError("Failed to load token (please run 'hfit login' first)", err)
 	}
 
 	return api.NewClient(cfg.HfitdHost, token)
@@ -186,7 +216,7 @@ func getAuthenticatedClient() *api.Client {
 func printJSON(data interface{}) {
 	output, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
-		log.Fatalf("Failed to marshal JSON: %v", err)
+		fatalError("Failed to marshal JSON", err)
 	}
 	fmt.Println(string(output))
 }
