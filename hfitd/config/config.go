@@ -14,15 +14,18 @@ package config
 import (
 	"errors"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Auth     AuthConfig
-	Redis    RedisConfig
+	Server        ServerConfig
+	DBMSProviders map[string]DatabaseConfig
+	Volumes       map[string]VolumeConfig
+	Auth          AuthConfig
+	Redis         RedisConfig
 }
 
 type ServerConfig struct {
@@ -31,11 +34,16 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
+	Type     string
 	Host     string
 	Port     int
 	User     string
 	Password string
 	Name     string
+}
+
+type VolumeConfig struct {
+	Path string
 }
 
 type RedisConfig struct {
@@ -57,24 +65,79 @@ func LoadConfigFromEnv() (*Config, error) {
 		return nil, errors.New("SERVER_ADDRESS environment variable is required")
 	}
 
-	dbHost := os.Getenv("DB_HOST")
-	if dbHost == "" {
-		return nil, errors.New("DB_HOST environment variable is required")
+	// Parse DBMS providers
+	dbmsProviders := os.Getenv("DBMS_PROVIDERS")
+	if dbmsProviders == "" {
+		return nil, errors.New("DBMS_PROVIDERS environment variable is required")
 	}
 
-	dbUser := os.Getenv("DB_USER")
-	if dbUser == "" {
-		return nil, errors.New("DB_USER environment variable is required")
+	providers := strings.Split(dbmsProviders, ",")
+	dbConfigs := make(map[string]DatabaseConfig)
+
+	for _, provider := range providers {
+		provider = strings.TrimSpace(provider)
+
+		dbType := os.Getenv(provider + ".DB_TYPE")
+		if dbType == "" {
+			return nil, errors.New(provider + ".DB_TYPE environment variable is required")
+		}
+
+		dbHost := os.Getenv(provider + ".DB_HOST")
+		if dbHost == "" {
+			return nil, errors.New(provider + ".DB_HOST environment variable is required")
+		}
+
+		dbUser := os.Getenv(provider + ".DB_USER")
+		if dbUser == "" {
+			return nil, errors.New(provider + ".DB_USER environment variable is required")
+		}
+
+		dbPassword := os.Getenv(provider + ".DB_PASSWORD")
+		if dbPassword == "" {
+			return nil, errors.New(provider + ".DB_PASSWORD environment variable is required")
+		}
+
+		dbName := os.Getenv(provider + ".DB_NAME")
+		if dbName == "" {
+			return nil, errors.New(provider + ".DB_NAME environment variable is required")
+		}
+
+		dbPortStr := os.Getenv(provider + ".DB_PORT")
+		dbPort := 5432 // default port
+		if dbPortStr != "" {
+			if port, err := strconv.Atoi(dbPortStr); err == nil {
+				dbPort = port
+			}
+		}
+
+		dbConfigs[provider] = DatabaseConfig{
+			Type:     dbType,
+			Host:     dbHost,
+			Port:     dbPort,
+			User:     dbUser,
+			Password: dbPassword,
+			Name:     dbName,
+		}
 	}
 
-	dbPassword := os.Getenv("DB_PASSWORD")
-	if dbPassword == "" {
-		return nil, errors.New("DB_PASSWORD environment variable is required")
-	}
+	// Parse Volume providers
+	volumes := os.Getenv("VOLUMES")
+	volumeConfigs := make(map[string]VolumeConfig)
 
-	dbName := os.Getenv("DB_NAME")
-	if dbName == "" {
-		return nil, errors.New("DB_NAME environment variable is required")
+	if volumes != "" {
+		volumeList := strings.Split(volumes, ",")
+		for _, volume := range volumeList {
+			volume = strings.TrimSpace(volume)
+
+			volumePath := os.Getenv(volume + ".PATH")
+			if volumePath == "" {
+				return nil, errors.New(volume + ".PATH environment variable is required")
+			}
+
+			volumeConfigs[volume] = VolumeConfig{
+				Path: volumePath,
+			}
+		}
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
@@ -92,13 +155,8 @@ func LoadConfigFromEnv() (*Config, error) {
 			Address: serverAddress,
 			Port:    80, // default port
 		},
-		Database: DatabaseConfig{
-			Host:     dbHost,
-			Port:     5432, // default port
-			User:     dbUser,
-			Password: dbPassword,
-			Name:     dbName,
-		},
+		DBMSProviders: dbConfigs,
+		Volumes:       volumeConfigs,
 		Redis: RedisConfig{
 			URL: redisURL,
 		},

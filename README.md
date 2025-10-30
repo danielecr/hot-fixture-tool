@@ -1,6 +1,6 @@
 # Hot Fixture Tool (hfit)
 
-[![Sponsor](https://img.shields.io/badge/sponsor-danielecr-brightgreen?logo=github&style=for-the-badge)](https://github.com/sponsors/danielecr) | [Donate](https://paypal.me/danielecru)
+[![Sponsor](https://img.shields.io/badge/sponsor-danielecr-brightgreen?logo=github&style=for-the-badge)](https://github.com/sponsors/danielecr) | [Donate](https://paypal.me/danielecru) | [ko-fi](https://ko-fi.com/danielecruciani)
 
 Hot Fixture Tool is compound of two pieces:
 
@@ -28,8 +28,8 @@ An application become "legacy" after 5 or 6 year of development, so this tool is
 
 ## Usage
 
-- keep your hot-export-package.json definition in files stored in the repo.
-- run hfit to download data based on hot-export-package.json definition, into a target folder
+- keep your hot-export-package.yaml definition in files stored in the repo.
+- run hfit to download data based on hot-export-package.yaml definition, into a target folder
 - for each folder:
   - run import tool to read data from downloaded resource.
   - execute integration tests
@@ -37,8 +37,8 @@ An application become "legacy" after 5 or 6 year of development, so this tool is
 
 A progressive workflow might fit better the integration test job. For this use this policy:
 
-- define a base-export-package.json
-- define as many hot-export-package.json as there are hot test cases.
+- define a base-export-package.yaml
+- define as many hot-export-package.yaml as there are hot test cases.
 
 ## Definition
 
@@ -63,6 +63,65 @@ Features:
 - storage by redis
 - admin user- public key
 - simple admin interface based on vanillaJs
+
+## Export package format (WIP)
+
+The command export-package accepts a .yaml file with definition for hot data exports. The format is:
+
+```yaml
+name: basedata
+exports:
+  dbcreate.sql:
+    type: dbcreate
+    data:
+      dbms: dbms_mysql1
+      tablelist:
+        - dbname1
+        - dbname2
+  tablegroup1.create.sql:
+    type: table-create
+    data:
+      dbms: dbms_mysql1
+      tablelist:
+        - dbname1.table1
+        - dbname2.table2
+        - dbname1.tablex
+      option: <dropcreate|ifnotexists>
+  tabledata1.data.sql:
+    type: table-data
+    data:
+      dbms: dbms_mysql1
+      table: dbname1.table1
+      filter: WHERE key<34 AND key>12
+  target-filename.txt:
+    type: file
+    data:
+      volume: datavol1
+      path: relative/path/to/file
+```
+
+NOTES:
+- order of retrievement is not important
+
+hfit CLI should be used to create and populate this .yaml file.
+
+Create the .yaml file:
+
+> ./hfit pkg create base-data-package.yaml basedata
+
+Execute package download and unpack into target folder (the target folder is named as the package name)
+
+> ./hfit pkg downpack base-data-package.yaml
+
+Manipulate by adding resource (this check if resource exists):
+
+> ./hfit pkg add basedata <name> <type> <data>
+
+Removing a resource:
+
+> ./hfit pkg rm basedata <name> <data>
+
+Edit (option/filter/tablename)
 
 ## Plan
 

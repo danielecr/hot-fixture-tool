@@ -50,12 +50,12 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// Initialize database
-	database, err := db.NewDatabase(cfg.Database)
+	// Initialize database manager
+	databaseManager, err := db.NewDatabaseManager(cfg.DBMSProviders)
 	if err != nil {
-		fatalError("Failed to initialize database", err)
+		fatalError("Failed to initialize database manager", err)
 	}
-	defer database.Close()
+	defer databaseManager.Close()
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -71,7 +71,7 @@ func main() {
 	}()
 
 	// Set up API routes
-	apiHandler, err := api.NewHandler(database, cfg, adminServer)
+	apiHandler, err := api.NewHandler(databaseManager, cfg, adminServer)
 	if err != nil {
 		fatalError("Failed to initialize API handler", err)
 	}
