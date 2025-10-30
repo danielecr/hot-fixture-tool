@@ -16,19 +16,52 @@ import (
 
 	"hfitd/config"
 
+	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 )
 
-type Database struct {
-	conn *sql.DB
+type DatabaseManager struct {
+	connections map[string]*sql.DB
+	configs     map[string]config.DatabaseConfig
 }
 
-// NewDatabase creates a new database connection
-func NewDatabase(cfg config.DatabaseConfig) (*Database, error) {
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Name)
+// NewDatabaseManager creates a new database manager with multiple DBMS connections
+func NewDatabaseManager(dbConfigs map[string]config.DatabaseConfig) (*DatabaseManager, error) {
+	manager := &DatabaseManager{
+		connections: make(map[string]*sql.DB),
+		configs:     dbConfigs,
+	}
 
-	conn, err := sql.Open("postgres", connStr)
+	for providerName, cfg := range dbConfigs {
+		conn, err := createConnection(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to %s: %v", providerName, err)
+		}
+		manager.connections[providerName] = conn
+	}
+
+	return manager, nil
+}
+
+// createConnection creates a database connection based on the database type
+func createConnection(cfg config.DatabaseConfig) (*sql.DB, error) {
+	var connStr string
+	var driverName string
+
+	switch cfg.Type {
+	case "postgres":
+		driverName = "postgres"
+		connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+			cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Name)
+	case "mysql":
+		driverName = "mysql"
+		connStr = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+			cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Name)
+	default:
+		return nil, fmt.Errorf("unsupported database type: %s", cfg.Type)
+	}
+
+	conn, err := sql.Open(driverName, connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %v", err)
 	}
@@ -37,15 +70,42 @@ func NewDatabase(cfg config.DatabaseConfig) (*Database, error) {
 		return nil, fmt.Errorf("failed to ping database: %v", err)
 	}
 
-	return &Database{conn: conn}, nil
+	return conn, nil
 }
 
-// Close closes the database connection
-func (d *Database) Close() error {
-	return d.conn.Close()
+// Close closes all database connections
+func (dm *DatabaseManager) Close() error {
+	for _, conn := range dm.connections {
+		if err := conn.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// GetConn returns the underlying database connection
-func (d *Database) GetConn() *sql.DB {
-	return d.conn
+// GetConnection returns the database connection for a specific provider
+func (dm *DatabaseManager) GetConnection(providerName string) (*sql.DB, error) {
+	conn, exists := dm.connections[providerName]
+	if !exists {
+		return nil, fmt.Errorf("database provider '%s' not found", providerName)
+	}
+	return conn, nil
+}
+
+// GetProviders returns a list of available database providers
+func (dm *DatabaseManager) GetProviders() []string {
+	providers := make([]string, 0, len(dm.connections))
+	for provider := range dm.connections {
+		providers = append(providers, provider)
+	}
+	return providers
+}
+
+// GetConfig returns the configuration for a specific provider
+func (dm *DatabaseManager) GetConfig(providerName string) (config.DatabaseConfig, error) {
+	cfg, exists := dm.configs[providerName]
+	if !exists {
+		return config.DatabaseConfig{}, fmt.Errorf("database provider '%s' not found", providerName)
+	}
+	return cfg, nil
 }

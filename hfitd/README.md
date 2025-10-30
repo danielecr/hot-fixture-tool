@@ -6,7 +6,7 @@ A secure REST API service for the Hot Fixture Tool that provides database and fi
 
 - **Public Key Authentication**: Uses RSA public/private key cryptography for secure client authentication
 - **JWT Token-based Authorization**: Issues JWT tokens for authenticated sessions
-- **Database Access**: REST endpoints for database operations
+- **Database Access**: REST endpoints for database inspect and export operations
 - **File Management**: Endpoints for file listing and downloading
 - **Secure by Default**: All API endpoints are protected except authentication routes
 
@@ -34,14 +34,33 @@ The authentication system uses a challenge-response mechanism with public key cr
 - `POST /auth/authenticate` - Submit signed challenge for JWT token
 - `GET /health` - Health check endpoint
 
+### DBMS Providers Operations (Protected)
+- `GET /db/dbmss` - List available providers (access)
+
 ### Database Operations (Protected)
-- `GET /db/dbs` - List available databases
-- `GET /db/{dbid}/tables` - List tables in a database
-- `GET /db/{dbid}/table/{tableid}/rows` - List rows in a table
+- `GET /db/{dbms}/dbs` - List available databases
+- `GET /db/{dbms}/{dbid}/tables` - List tables in a database
+- `GET /db/{dbms}/{dbid}/table/{tableid}/rows` - List rows in a table
+- `GET /db/{dbms}/{dbid}/table/{tableid}/rows?filter="where keyfield>3 and keyfield<100"` - List rows in a table
+
+
+### Volume Operations (Protected)
+- `GET /volumes` - List available volumes
 
 ### File Operations (Protected)
-- `GET /files/list` - List available files
-- `GET /files/download?path=<filepath>` - Download a file
+- `GET /files/{volume}/list` - List available files
+- `GET /files/{volume}/list?filter[]="name:<wildcard>&filter[]="mtime:-2"&&filter[]="sort:rtime"` - List available files filtered
+- `GET /files/{volume}/download?path=<filepath>` - Download a file
+- `GET /files/{volume}/download?folder=<foder>&filter[]="name:<wildcard>&filter[]="mtime:-2"&&filter[]="sort:rtime"` - Download the first matching file based on filter definition
+
+### Pack Download exec Operation (Protected)
+- `POST /packdownload/{packname}` accept yaml payload to create a package.tar.gz with all files described in the yaml, then it returns the file to the caller.
+
+Package request creation is logged into redis with key schema: <useremail>_pkg_<packname>
+
+and content the yaml definition.
+Another entry in redis has the key schema: <useremail>_pkg_<packname>_timestamp
+and content {"timestamp": <timestamp>, "size": <pkgsize>}
 
 ## Configuration
 
