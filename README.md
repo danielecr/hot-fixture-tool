@@ -28,6 +28,7 @@ An application become "legacy" after 5 or 6 year of development, so this tool is
 
 ## Usage
 
+- create a folder on your service repo: `mkdir hfit-data; cd hfit-data`
 - keep your hot-export-package.yaml definition in files stored in the repo.
 - run hfit to download data based on hot-export-package.yaml definition, into a target folder
 - for each folder:
@@ -39,6 +40,56 @@ A progressive workflow might fit better the integration test job. For this use t
 
 - define a base-export-package.yaml
 - define as many hot-export-package.yaml as there are hot test cases.
+
+Example of folder content:
+~~~
+└── hfit-data
+    ├── .gitignore
+    ├── base-export
+    │   ├── db1.table1.create.sql
+    │   ├── db1.table2.create.sql
+    │   └── db1.table3.create.sql
+    ├── base-export.yaml
+    ├── use-case123
+    │   ├── db1.table3.data.sql
+    │   └── file-import-123.txt
+    └── use-case123.yaml
+~~~
+
+**Importing data**
+
+To use the `hfit` CLI to import data, use the `local-i` sub-command
+
+`hfit local-i create my-docker.yaml extract-from base-export.yaml use-case123.yaml`
+
+Open a text editor and fill the required data for (write) connection to your local dbms and filesystem provider.
+
+Then run
+
+`hfit local-i run-on my-docker.yaml base-export.yaml --no-download`
+
+With `--no-download` option it imports data and just use the existing data.
+
+Use a .gitignore in hfit/ folder like this:
+
+~~~
+*
+!.gitignore
+!*.yaml
+~~~
+
+to avoid the checkout of hot data.
+
+As helper there is a convenient command:
+
+`hfit prepare`
+
+This creates `hfit-data/` folder and populates with .gitignore :
+
+~~~
+└── hfit-data
+    └── .gitignore
+~~~
 
 ## Definition
 
@@ -62,13 +113,14 @@ Features:
 - user authentication by key-pair, challenge, and jwt
 - storage by redis
 - admin user- public key
-- simple admin interface based on vanillaJs
+- ~~simple admin interface based on vanillaJs~~
 
 ## Export package format (WIP)
 
 The command export-package accepts a .yaml file with definition for hot data exports. The format is:
 
 ```yaml
+hfitVersion: 1
 name: basedata
 exports:
   dbcreate.sql:
@@ -115,11 +167,11 @@ Execute package download and unpack into target folder (the target folder is nam
 
 Manipulate by adding resource (this check if resource exists):
 
-> ./hfit pkg add basedata <name> <type> <data>
+> ./hfit pkg add base-data-package.yaml <name> <type> <data>
 
 Removing a resource:
 
-> ./hfit pkg rm basedata <name> <data>
+> ./hfit pkg rm base-data-package.yaml <name> <data>
 
 Edit (option/filter/tablename)
 

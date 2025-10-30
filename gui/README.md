@@ -1,5 +1,7 @@
 # Admin interface
 
+**Abandoned**
+
 This admin interface provides:
 - admin authentication by email/password
 - admin page is served in port different from the regular API
