@@ -25,6 +25,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hfitd-cli ./cmd/h
 # Final stage
 FROM alpine:latest
 
+LABEL org.opencontainers.image.authors="daniele@smartango.com"
+
 # Install runtime dependencies
 RUN apk --no-cache add ca-certificates redis
 

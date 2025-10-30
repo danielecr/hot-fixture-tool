@@ -1,8 +1,19 @@
+/*
+ * Hot Fixture Tool Daemon - REST API
+ * Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>
+ * 
+ * This file is part of the Hot Fixture Tool project.
+ * GitHub: https://github.com/danielecr/hot-fixture-tool
+ * 
+ * Licensed under the terms specified in the LICENSE file.
+ */
+
 // provide the REST API for Hot Fixture Tool
 package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"hfitd/admin"
@@ -26,19 +37,19 @@ API:
 /*
 * NewHandler creates a new HTTP handler for the API.
  */
-func NewHandler(database *db.Database, cfg *config.Config, adminServer *admin.AdminServer) http.Handler {
+func NewHandler(database *db.Database, cfg *config.Config, adminServer *admin.AdminServer) (http.Handler, error) {
 	router := mux.NewRouter()
 
 	// Initialize Redis client
 	redisClient, err := redisclient.NewClient(cfg.Redis)
 	if err != nil {
-		panic("Failed to initialize Redis client: " + err.Error())
+		return nil, fmt.Errorf("failed to initialize Redis client: %w", err)
 	}
 
 	// Initialize authentication manager
 	authManager, err := auth.NewAuthManager([]byte(cfg.Auth.JWTSecret), redisClient)
 	if err != nil {
-		panic("Failed to initialize auth manager: " + err.Error())
+		return nil, fmt.Errorf("failed to initialize auth manager: %w", err)
 	}
 
 	// Well-known JWT public key endpoint (RFC 7517 style)
@@ -95,7 +106,7 @@ func NewHandler(database *db.Database, cfg *config.Config, adminServer *admin.Ad
 	// Health check (unprotected)
 	router.HandleFunc("/health", healthCheckHandler).Methods("GET")
 
-	return router
+	return router, nil
 }
 
 /*

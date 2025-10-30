@@ -1,7 +1,18 @@
+/*
+ * Hot Fixture Tool Daemon (hfitd)
+ * Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>
+ *
+ * This file is part of the Hot Fixture Tool project.
+ * GitHub: https://github.com/danielecr/hot-fixture-tool
+ *
+ * Licensed under the terms specified in the LICENSE file.
+ */
+
 package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -15,24 +26,34 @@ import (
 	redisclient "hfitd/redis"
 )
 
+// fatalError prints an error message with support contact information and exits
+func fatalError(msg string, err error) {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hfitd error: %s: %v | Support: daniele@smartango.com | GitHub: github.com/danielecr/hot-fixture-tool\n", msg, err)
+	} else {
+		fmt.Fprintf(os.Stderr, "hfitd error: %s | Support: daniele@smartango.com | GitHub: github.com/danielecr/hot-fixture-tool\n", msg)
+	}
+	os.Exit(1)
+}
+
 func main() {
 	// Load configuration from environment variables
 	cfg, err := config.LoadConfigFromEnv()
 	if err != nil {
-		log.Fatalf("Failed to load config from environment: %v", err)
+		fatalError("Failed to load config from environment", err)
 	}
 
 	// Initialize Redis client
 	redisClient, err := redisclient.NewClient(cfg.Redis)
 	if err != nil {
-		log.Fatalf("Failed to initialize Redis client: %v", err)
+		fatalError("Failed to initialize Redis client", err)
 	}
 	defer redisClient.Close()
 
 	// Initialize database
 	database, err := db.NewDatabase(cfg.Database)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		fatalError("Failed to initialize database", err)
 	}
 	defer database.Close()
 
@@ -50,7 +71,10 @@ func main() {
 	}()
 
 	// Set up API routes
-	apiHandler := api.NewHandler(database, cfg, adminServer)
+	apiHandler, err := api.NewHandler(database, cfg, adminServer)
+	if err != nil {
+		fatalError("Failed to initialize API handler", err)
+	}
 
 	// Handle graceful shutdown
 	go func() {
@@ -67,7 +91,7 @@ func main() {
 	log.Printf("Starting server on %s", cfg.Server.Address)
 	log.Printf("Admin socket: %s", socketPath)
 	if err := http.ListenAndServe(cfg.Server.Address, apiHandler); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		fatalError("Failed to start server", err)
 	}
 }
 
