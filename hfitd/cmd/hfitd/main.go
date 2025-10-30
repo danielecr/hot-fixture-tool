@@ -1,4 +1,4 @@
-/*
+/**
  * Hot Fixture Tool Daemon (hfitd)
  * Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>
  *

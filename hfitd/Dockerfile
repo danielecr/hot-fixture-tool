@@ -17,7 +17,7 @@ RUN go mod download
 COPY . .
 
 # Build the main server
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hfitd .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hfitd ./cmd/hfitd
 
 # Build the CLI tool
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hfitd-cli ./cmd/hfitd-cli
