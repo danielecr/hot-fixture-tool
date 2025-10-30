@@ -30,6 +30,7 @@ import (
 	"hfitd/auth"
 	"hfitd/config"
 	"hfitd/db"
+	"hfitd/packdownload"
 	redisclient "hfitd/redis"
 
 	"github.com/gorilla/mux"
@@ -326,7 +327,13 @@ func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminSe
 		vars := mux.Vars(r)
 		packname := vars["packname"]
 
-		err := handlePackageDownload(w, r, packname, cfg, databaseManager)
+		// Get user email from JWT token (extract username from X-User header set by middleware)
+		userEmail := r.Header.Get("X-User")
+		if userEmail == "" {
+			userEmail = "unknown@example.com" // Fallback if header not set
+		}
+
+		err := handlePackageDownloadNew(w, r, packname, userEmail, cfg, databaseManager, redisClient)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -1198,4 +1205,48 @@ func streamTableRows(w http.ResponseWriter, conn *sql.DB, dbms string, dbid stri
 	}
 
 	return nil
+}
+
+/*
+* handlePackageDownloadNew processes package download requests using the new packdownload module.
+* This includes Redis storage as specified in the requirements.
+ */
+func handlePackageDownloadNew(w http.ResponseWriter, r *http.Request, packname, userEmail string, cfg *config.Config, databaseManager *db.DatabaseManager, redisClient *redisclient.Client) error {
+	// Read YAML from request body
+	yamlData, err := io.ReadAll(r.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read request body: %v", err)
+	}
+
+	// Create package processor
+	processor := packdownload.NewPackageProcessor(cfg, databaseManager, redisClient)
+
+	// Process package and get tar.gz file path
+	tarPath, err := processor.ProcessPackage(userEmail, packname, yamlData)
+	if err != nil {
+		return fmt.Errorf("failed to process package: %v", err)
+	}
+	defer os.Remove(tarPath) // Clean up temporary file
+
+	// Open the tar.gz file
+	tarFile, err := os.Open(tarPath)
+	if err != nil {
+		return fmt.Errorf("failed to open package file: %v", err)
+	}
+	defer tarFile.Close()
+
+	// Get file info for Content-Length header
+	fileInfo, err := tarFile.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to get file info: %v", err)
+	}
+
+	// Set response headers
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar.gz", packname))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
+
+	// Stream the file to the client
+	_, err = io.Copy(w, tarFile)
+	return err
 }

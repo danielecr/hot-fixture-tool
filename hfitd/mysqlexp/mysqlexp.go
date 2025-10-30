@@ -14,26 +14,43 @@ package mysqlexp
 // it uses https://pkg.go.dev/github.com/aliakseiz/go-mysqldump for mysqldump
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/aliakseiz/go-mysqldump"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 // ExportDatabase exports the entire database creation SQL to the specified file
 func ExportDatabase(dsn, exportPath string) error {
-	dumper, err := mysqldump.New(dsn)
+	// Open database connection
+	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return fmt.Errorf("failed to create mysqldump instance: %v", err)
+		return fmt.Errorf("failed to open database connection: %v", err)
+	}
+	defer db.Close()
+
+	// Create temporary directory for the dump
+	tempDir := filepath.Dir(exportPath)
+	filename := filepath.Base(exportPath)
+	// Remove .sql extension if present for the format
+	if filepath.Ext(filename) == ".sql" {
+		filename = filename[:len(filename)-4]
 	}
 
-	sql, err := dumper.Dump()
+	// Register the dumper - it will create the file with .sql extension
+	dumper, err := mysqldump.Register(db, tempDir, filename, "")
 	if err != nil {
+		return fmt.Errorf("failed to register mysqldump: %v", err)
+	}
+	defer dumper.Close()
+
+	// Perform the dump
+	if err = dumper.Dump(); err != nil {
 		return fmt.Errorf("failed to dump database: %v", err)
-	}
-
-	if err := os.WriteFile(exportPath, []byte(sql), 0644); err != nil {
-		return fmt.Errorf("failed to write export file: %v", err)
 	}
 
 	return nil
@@ -41,17 +58,36 @@ func ExportDatabase(dsn, exportPath string) error {
 
 // ExportTable exports the table creation SQL for a specific table to the specified file
 func ExportTable(dsn, tableName, exportPath string) error {
-	dumper, err := mysqldump.New(dsn)
+	// Open database connection
+	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return fmt.Errorf("failed to create mysqldump instance: %v", err)
+		return fmt.Errorf("failed to open database connection: %v", err)
+	}
+	defer db.Close()
+
+	// For individual table export, we need to use the CreateTable method
+	tempDir := filepath.Dir(exportPath)
+	filename := fmt.Sprintf("table_%s_%d", tableName, time.Now().Unix())
+
+	dumper, err := mysqldump.Register(db, tempDir, filename, "")
+	if err != nil {
+		return fmt.Errorf("failed to register mysqldump: %v", err)
+	}
+	defer dumper.Close()
+
+	// Create table struct and get CREATE TABLE statement
+	table, err := dumper.CreateTable("", tableName)
+	if err != nil {
+		return fmt.Errorf("failed to create table struct: %v", err)
 	}
 
-	sql, err := dumper.DumpTable(tableName)
+	createSQL, err := table.CreateSQL()
 	if err != nil {
-		return fmt.Errorf("failed to dump table %s: %v", tableName, err)
+		return fmt.Errorf("failed to get CREATE TABLE SQL: %v", err)
 	}
 
-	if err := os.WriteFile(exportPath, []byte(sql), 0644); err != nil {
+	// Write the CREATE TABLE statement to file
+	if err := os.WriteFile(exportPath, []byte(createSQL), 0644); err != nil {
 		return fmt.Errorf("failed to write export file: %v", err)
 	}
 
@@ -60,18 +96,40 @@ func ExportTable(dsn, tableName, exportPath string) error {
 
 // ExportTableData exports the data for a specific table to the specified file
 func ExportTableData(dsn, tableName, exportPath string) error {
-	dumper, err := mysqldump.New(dsn)
+	// Open database connection
+	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return fmt.Errorf("failed to create mysqldump instance: %v", err)
+		return fmt.Errorf("failed to open database connection: %v", err)
+	}
+	defer db.Close()
+
+	// Create a file to write the dump to
+	outputFile, err := os.Create(exportPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	// Create a Data struct to configure the dump
+	dumper := &mysqldump.Data{
+		Out:        outputFile,
+		Connection: db,
 	}
 
-	sql, err := dumper.DumpTableData(tableName)
+	// Get the specific table
+	table, err := dumper.CreateTable("", tableName)
 	if err != nil {
-		return fmt.Errorf("failed to dump data for table %s: %v", tableName, err)
+		return fmt.Errorf("failed to create table struct: %v", err)
 	}
 
-	if err := os.WriteFile(exportPath, []byte(sql), 0644); err != nil {
-		return fmt.Errorf("failed to write export file: %v", err)
+	// Initialize the table
+	if err = table.Init(); err != nil {
+		return fmt.Errorf("failed to initialize table: %v", err)
+	}
+
+	// Write only the data (INSERT statements) for this table
+	if err = dumper.WriteTable(table); err != nil {
+		return fmt.Errorf("failed to write table data: %v", err)
 	}
 
 	return nil

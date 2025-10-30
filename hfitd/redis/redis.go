@@ -17,6 +17,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"time"
 
 	"hfitd/config"
 
@@ -138,4 +139,21 @@ func (c *Client) GetJWTPrivateKey(ctx context.Context) (string, error) {
 // SetJWTPrivateKey stores the JWT private key
 func (c *Client) SetJWTPrivateKey(ctx context.Context, privateKeyPEM string) error {
 	return c.rdb.Set(ctx, "jwt_private_key", privateKeyPEM, 0).Err()
+}
+
+// Set stores a key-value pair in Redis
+func (c *Client) Set(ctx context.Context, key, value string, expiration time.Duration) error {
+	return c.rdb.Set(ctx, key, value, expiration).Err()
+}
+
+// Get retrieves a value from Redis by key
+func (c *Client) Get(ctx context.Context, key string) (string, error) {
+	result, err := c.rdb.Get(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", fmt.Errorf("key not found: %s", key)
+		}
+		return "", fmt.Errorf("failed to get key %s from Redis: %v", key, err)
+	}
+	return result, nil
 }
