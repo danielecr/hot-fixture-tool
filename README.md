@@ -1,6 +1,6 @@
 # Hot Fixture Tool (hfit)
 
-[![Sponsor](https://img.shields.io/badge/sponsor-danielecr-brightgreen?logo=github&style=for-the-badge)](https://github.com/sponsors/danielecr)
+[![Sponsor](https://img.shields.io/badge/sponsor-danielecr-brightgreen?logo=github&style=for-the-badge)](https://github.com/sponsors/danielecr) | [Donate](https://paypal.me/danielecru)
 
 Hot Fixture Tool is compound of two pieces:
 
