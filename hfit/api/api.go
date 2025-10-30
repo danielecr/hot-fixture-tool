@@ -183,16 +183,94 @@ func (c *Client) StreamFiles(volume string) error {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line != "" {
-			// Parse each JSON line and pretty print it
-			var fileInfo map[string]interface{}
-			if err := json.Unmarshal([]byte(line), &fileInfo); err == nil {
-				// Pretty print each file info
-				jsonData, _ := json.MarshalIndent(fileInfo, "", "  ")
-				fmt.Println(string(jsonData))
-			} else {
-				// If parsing fails, just print the raw line
-				fmt.Println(line)
+			// Output raw NDJSON line
+			fmt.Println(line)
+		}
+	}
+
+	return scanner.Err()
+}
+
+// StreamRows streams table rows using NDJSON format with optional filterpart parameter
+func (c *Client) StreamRows(dbms, dbID, tableID, filterpart string) error {
+	// Build the endpoint URL with optional filterpart parameter
+	endpoint := fmt.Sprintf("/db/%s/%s/table/%s/rows", dbms, dbID, tableID)
+	if filterpart != "" {
+		endpoint += fmt.Sprintf("?filterpart=%s", filterpart)
+	}
+
+	req, err := http.NewRequest("GET", c.BaseURL+endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Accept", "application/x-json-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Read streaming NDJSON response line by line
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			// Output raw NDJSON line
+			fmt.Println(line)
+		}
+	}
+
+	return scanner.Err()
+}
+
+// StreamFilesWithFilters streams files from a volume with advanced filtering using NDJSON format
+func (c *Client) StreamFilesWithFilters(volume string, filters []string) error {
+	// Build the endpoint URL with filter parameters
+	endpoint := fmt.Sprintf("/files/%s/list", volume)
+	if len(filters) > 0 {
+		endpoint += "?"
+		for i, filter := range filters {
+			if i > 0 {
+				endpoint += "&"
 			}
+			endpoint += fmt.Sprintf("filter[]=%s", filter)
+		}
+	}
+
+	req, err := http.NewRequest("GET", c.BaseURL+endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Accept", "application/x-json-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Read streaming NDJSON response line by line
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			// Output raw NDJSON line
+			fmt.Println(line)
 		}
 	}
 

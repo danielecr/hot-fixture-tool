@@ -86,8 +86,8 @@ func printUsage() {
 	fmt.Println("  hfit dbmss                                          List available DBMS providers")
 	fmt.Println("  hfit dbs <dbms>                                     List databases for DBMS provider")
 	fmt.Println("  hfit tables <dbms> <db_id>                          List tables in database")
-	fmt.Println("  hfit rows <dbms> <db_id> <table_id>                 List rows in table")
-	fmt.Println("  hfit files <volume>                                 List files in volume (streaming)")
+	fmt.Println("  hfit rows <dbms> <db_id> <table_id> [filterpart]    Stream table rows as NDJSON")
+	fmt.Println("  hfit files <volume> [filters...]                    Stream files as NDJSON")
 	fmt.Println("  hfit pkg create <package.yaml> <name>               Create new package definition")
 	fmt.Println("  hfit pkg add <package.yaml> <name> <type> <data>    Add resource to package")
 	fmt.Println("  hfit pkg rm <package.yaml> <name>                   Remove resource from package")
@@ -186,7 +186,11 @@ func handleTablesCommand() {
 
 func handleRowsCommand() {
 	if len(os.Args) < 5 {
-		fmt.Println("Usage: hfit rows <dbms> <db_id> <table_id>")
+		fmt.Println("Usage: hfit rows <dbms> <db_id> <table_id> [filterpart]")
+		fmt.Println("Examples:")
+		fmt.Println("  hfit rows mysql mydb users")
+		fmt.Println("  hfit rows mysql mydb users \"WHERE age > 25\"")
+		fmt.Println("  hfit rows postgres mydb orders \"ORDER BY created_at DESC LIMIT 50\"")
 		os.Exit(1)
 	}
 
@@ -195,27 +199,50 @@ func handleRowsCommand() {
 	dbID := os.Args[3]
 	tableID := os.Args[4]
 
-	rows, err := client.ListRows(dbms, dbID, tableID)
-	if err != nil {
-		fatalError("Failed to list rows", err)
+	// Optional filterpart parameter
+	var filterpart string
+	if len(os.Args) > 5 {
+		filterpart = os.Args[5]
 	}
 
-	printJSON(rows)
+	err := client.StreamRows(dbms, dbID, tableID, filterpart)
+	if err != nil {
+		fatalError("Failed to stream rows", err)
+	}
 }
 
 func handleFilesCommand() {
 	if len(os.Args) < 3 {
-		fmt.Println("Usage: hfit files <volume>")
-		fmt.Println("Example: hfit files volume1")
+		fmt.Println("Usage: hfit files <volume> [filters...]")
+		fmt.Println("Examples:")
+		fmt.Println("  hfit files volume1")
+		fmt.Println("  hfit files volume1 \"name:*.log\"")
+		fmt.Println("  hfit files volume1 \"name:*.log\" \"mtime:7\" \"size:>1024\"")
+		fmt.Println("  hfit files volume1 \"name:backup_*\" \"size:>1048576\"")
+		fmt.Println("")
+		fmt.Println("Available filters:")
+		fmt.Println("  name:pattern    - File name pattern with * and ? wildcards")
+		fmt.Println("  mtime:days      - Modified time: 7 (last 7 days), -30 (older than 30 days)")
+		fmt.Println("  size:condition  - File size: >1024 (larger than), <1048576 (smaller than)")
 		os.Exit(1)
 	}
 
 	client := getAuthenticatedClient()
 	volume := os.Args[2]
 
-	err := client.StreamFiles(volume)
-	if err != nil {
-		fatalError("Failed to list files", err)
+	// Collect filter arguments if provided
+	var filters []string
+	if len(os.Args) > 3 {
+		filters = os.Args[3:]
+		err := client.StreamFilesWithFilters(volume, filters)
+		if err != nil {
+			fatalError("Failed to stream files with filters", err)
+		}
+	} else {
+		err := client.StreamFiles(volume)
+		if err != nil {
+			fatalError("Failed to stream files", err)
+		}
 	}
 }
 

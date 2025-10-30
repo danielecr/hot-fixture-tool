@@ -22,7 +22,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -358,13 +357,6 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-* registerHealthCheckRoute registers the health check route.
- */
-func registerHealthCheckRoute(router *mux.Router) {
-	router.HandleFunc("/health", healthCheckHandler).Methods("GET")
-}
-
-/*
 * getDatabases retrieves the list of databases for a specific DBMS provider.
  */
 func getDatabases(conn *sql.DB, dbms string, databaseManager *db.DatabaseManager) ([]string, error) {
@@ -501,46 +493,6 @@ func streamFiles(w http.ResponseWriter, volumePath string, query url.Values) err
 }
 
 /*
-* listFiles lists files in a volume with optional filtering (kept for backward compatibility).
- */
-func listFiles(volumePath string, query url.Values) ([]map[string]interface{}, error) {
-	var files []map[string]interface{}
-
-	err := filepath.Walk(volumePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip directories for now, only return files
-		if info.IsDir() {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(volumePath, path)
-		if err != nil {
-			return err
-		}
-
-		fileInfo := map[string]interface{}{
-			"name":    info.Name(),
-			"path":    relPath,
-			"size":    info.Size(),
-			"modtime": info.ModTime().Unix(),
-			"isdir":   info.IsDir(),
-		}
-
-		// Apply filters from query parameters
-		if passesFilters(fileInfo, query) {
-			files = append(files, fileInfo)
-		}
-
-		return nil
-	})
-
-	return files, err
-}
-
-/*
 * passesFilters checks if a file passes the filter criteria.
 * Supports name wildcards, time filtering, and sorting hints.
  */
@@ -645,84 +597,6 @@ func matchesPattern(fileName, pattern string) bool {
 
 	// Exact match or contains
 	return strings.Contains(fileName, pattern)
-}
-
-/*
-* applySorting sorts files based on filter criteria for download selection.
-* This is used when downloading from folders with multiple matching files.
- */
-func applySorting(files []map[string]interface{}, query url.Values) []map[string]interface{} {
-	filters := query["filter[]"]
-	var sortCriteria string
-	var sortOrder string = "asc" // default ascending
-
-	// Extract sort criteria from filters
-	for _, filter := range filters {
-		parts := strings.SplitN(filter, ":", 2)
-		if len(parts) == 2 && parts[0] == "sort" {
-			sortSpec := parts[1]
-			// Handle sort direction (e.g., "mtime:desc", "size:asc", "name")
-			if strings.Contains(sortSpec, ":") {
-				sortParts := strings.SplitN(sortSpec, ":", 2)
-				sortCriteria = sortParts[0]
-				sortOrder = sortParts[1]
-			} else {
-				sortCriteria = sortSpec
-			}
-			break
-		}
-	}
-
-	// If no sort criteria specified, return files as-is
-	if sortCriteria == "" {
-		return files
-	}
-
-	// Create a copy of the slice to avoid modifying the original
-	sortedFiles := make([]map[string]interface{}, len(files))
-	copy(sortedFiles, files)
-
-	// Sort based on criteria
-	switch sortCriteria {
-	case "mtime", "modtime":
-		sort.Slice(sortedFiles, func(i, j int) bool {
-			timeI := sortedFiles[i]["modtime"].(int64)
-			timeJ := sortedFiles[j]["modtime"].(int64)
-			if sortOrder == "desc" {
-				return timeI > timeJ // newest first
-			}
-			return timeI < timeJ // oldest first
-		})
-	case "size":
-		sort.Slice(sortedFiles, func(i, j int) bool {
-			sizeI := sortedFiles[i]["size"].(int64)
-			sizeJ := sortedFiles[j]["size"].(int64)
-			if sortOrder == "desc" {
-				return sizeI > sizeJ // largest first
-			}
-			return sizeI < sizeJ // smallest first
-		})
-	case "name":
-		sort.Slice(sortedFiles, func(i, j int) bool {
-			nameI := sortedFiles[i]["name"].(string)
-			nameJ := sortedFiles[j]["name"].(string)
-			if sortOrder == "desc" {
-				return nameI > nameJ // Z to A
-			}
-			return nameI < nameJ // A to Z
-		})
-	case "path":
-		sort.Slice(sortedFiles, func(i, j int) bool {
-			pathI := sortedFiles[i]["path"].(string)
-			pathJ := sortedFiles[j]["path"].(string)
-			if sortOrder == "desc" {
-				return pathI > pathJ
-			}
-			return pathI < pathJ
-		})
-	}
-
-	return sortedFiles
 }
 
 /*
@@ -1172,55 +1046,6 @@ func validateFilterPart(filterpart string) (string, error) {
 	}
 
 	return strings.TrimSpace(filterpart), nil
-}
-
-/*
-* getTableRows retrieves the rows from a specific table.
- */
-func getTableRows(conn *sql.DB, dbms string, dbid string, tableid string) ([]map[string]interface{}, error) {
-	// Simple SELECT * query - in production you might want to limit rows
-	query := fmt.Sprintf("SELECT * FROM %s LIMIT 100", tableid)
-
-	rows, err := conn.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	// Get column names
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-
-	var result []map[string]interface{}
-
-	for rows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-
-		for i := range columns {
-			valuePtrs[i] = &values[i]
-		}
-
-		if err := rows.Scan(valuePtrs...); err != nil {
-			return nil, err
-		}
-
-		row := make(map[string]interface{})
-		for i, col := range columns {
-			val := values[i]
-			if b, ok := val.([]byte); ok {
-				row[col] = string(b)
-			} else {
-				row[col] = val
-			}
-		}
-
-		result = append(result, row)
-	}
-
-	return result, nil
 }
 
 /*
