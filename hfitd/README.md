@@ -48,10 +48,67 @@ The authentication system uses a challenge-response mechanism with public key cr
 - `GET /volumes` - List available volumes
 
 ### File Operations (Protected)
-- `GET /files/{volume}/list` - List available files
-- `GET /files/{volume}/list?filter[]="name:<wildcard>&filter[]="mtime:-2"&&filter[]="sort:rtime"` - List available files filtered
+- `GET /files/{volume}/list` - **Stream** available files (NDJSON format, optimized for large directories)
+- `GET /files/{volume}/list?filter[]=name:*.log&filter[]=mtime:-7&filter[]=size:>1024` - Stream filtered files
 - `GET /files/{volume}/download?path=<filepath>` - Download a file
-- `GET /files/{volume}/download?folder=<foder>&filter[]="name:<wildcard>&filter[]="mtime:-2"&&filter[]="sort:rtime"` - Download the first matching file based on filter definition
+- `GET /files/{volume}/download?folder=<folder>&filter[]=name:*.config&filter[]=sort:mtime:desc` - Download best matching file
+
+#### File Download with Smart Selection
+
+The download endpoint supports intelligent file selection when downloading from folders with multiple matching files:
+
+**Smart Download Examples:**
+```bash
+# Download newest log file
+GET /files/logs/download?folder=app&filter[]=name:*.log&filter[]=sort:mtime:desc
+
+# Download largest backup file  
+GET /files/backups/download?folder=daily&filter[]=name:backup_*&filter[]=sort:size:desc
+
+# Download alphabetically first config file
+GET /files/config/download?folder=env&filter[]=name:*.conf&filter[]=sort:name:asc
+```
+
+**Sorting Options for Download:**
+- `filter[]=sort:mtime:desc` - Newest file first (most recent modification)
+- `filter[]=sort:mtime:asc` - Oldest file first
+- `filter[]=sort:size:desc` - Largest file first
+- `filter[]=sort:size:asc` - Smallest file first  
+- `filter[]=sort:name:desc` - Alphabetically last (Z-A)
+- `filter[]=sort:name:asc` - Alphabetically first (A-Z)
+- `filter[]=sort:path:asc` - By full path
+
+**Performance Optimization:**
+- **O(n) algorithm**: Single-pass file selection without full sorting
+- **Streaming filters**: Files filtered during directory traversal
+- **Memory efficient**: Only best candidate kept in memory
+
+#### File Listing Performance & Streaming
+
+The `/files/{volume}/list` endpoint uses **streaming NDJSON** (`application/x-json-stream`) for optimal performance with large directories, similar to Unix `find` command:
+
+**Streaming Response Format:**
+```
+Content-Type: application/x-json-stream
+
+{"name":"file1.txt","path":"dir/file1.txt","size":1024,"modtime":1735574400,"isdir":false}
+{"name":"file2.log","path":"logs/file2.log","size":2048,"modtime":1735574401,"isdir":false}
+{"name":"config.yml","path":"config.yml","size":512,"modtime":1735574402,"isdir":false}
+```
+
+**Advanced Filtering:**
+- `filter[]=name:*.log` - Glob pattern matching (* and ? wildcards)
+- `filter[]=mtime:-7` - Files modified before 7 days ago (negative = before)
+- `filter[]=mtime:7` - Files modified within last 7 days (positive = after)
+- `filter[]=size:>1024` - Files larger than 1024 bytes
+- `filter[]=size:<1048576` - Files smaller than 1MB
+- `filter[]=size:2048` - Files exactly 2048 bytes
+
+**Performance Benefits:**
+- **Real-time streaming**: Files appear immediately as found
+- **Memory efficient**: No buffering of entire directory listing
+- **Unix find performance**: Optimized for millions of files
+- **Early filtering**: Filters applied during traversal, not after
 
 ### Pack Download exec Operation (Protected)
 - `POST /packdownload/{packname}` accept yaml payload to create a package.tar.gz with all files described in the yaml, then it returns the file to the caller.

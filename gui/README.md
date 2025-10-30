@@ -1,5 +1,15 @@
 # Admin interface
 
+## Plan
+
+User can inspect all db dbdata and all file listing by hfit tool, but can create a download package only by admin approve.
+
+A simple admin web gui should list the pkg-requests pending and the user requiring approve.
+
+The admin can inspect the package.yaml file to check, then approve the pkg download.
+
+## Old
+
 **Abandoned**
 
 This admin interface provides:

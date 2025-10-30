@@ -12,6 +12,7 @@
 package api
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -135,9 +136,9 @@ func (c *Client) ListRows(dbms, dbID, tableID string) ([]interface{}, error) {
 	return rows, nil
 }
 
-// ListFiles lists files
-func (c *Client) ListFiles() ([]interface{}, error) {
-	resp, err := c.makeRequest("GET", "/files/list")
+// ListFiles lists files in a volume
+func (c *Client) ListFiles(volume string) ([]interface{}, error) {
+	resp, err := c.makeRequest("GET", fmt.Sprintf("/files/%s/list", volume))
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +155,48 @@ func (c *Client) ListFiles() ([]interface{}, error) {
 	}
 
 	return files, nil
+}
+
+// StreamFiles streams files from a volume using NDJSON format for high performance
+func (c *Client) StreamFiles(volume string) error {
+	req, err := http.NewRequest("GET", c.BaseURL+fmt.Sprintf("/files/%s/list", volume), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Accept", "application/x-json-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Read streaming NDJSON response line by line
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			// Parse each JSON line and pretty print it
+			var fileInfo map[string]interface{}
+			if err := json.Unmarshal([]byte(line), &fileInfo); err == nil {
+				// Pretty print each file info
+				jsonData, _ := json.MarshalIndent(fileInfo, "", "  ")
+				fmt.Println(string(jsonData))
+			} else {
+				// If parsing fails, just print the raw line
+				fmt.Println(line)
+			}
+		}
+	}
+
+	return scanner.Err()
 }
 
 // DownloadFile downloads a file

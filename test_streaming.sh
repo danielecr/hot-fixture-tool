@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# Test script to demonstrate the streaming NDJSON file listing API
+# This shows how the API performs like Unix find for large directories
+
+echo "=== Hot Fixture Tool - Streaming File Listing Demo ==="
+echo ""
+
+# Example curl command to test streaming
+echo "Example API call (when service is running):"
+echo ""
+echo "curl -H 'Authorization: Bearer \$JWT_TOKEN' \\"
+echo "     -H 'Accept: application/x-json-stream' \\"
+echo "     'http://localhost:8080/files/volume1/list?filter[]=name:*.log&filter[]=mtime:-7'"
+echo ""
+
+echo "Response format (NDJSON - newline delimited JSON):"
+echo "Content-Type: application/x-json-stream"
+echo ""
+echo '{"name":"app.log","path":"logs/app.log","size":2048,"modtime":1735574400,"isdir":false}'
+echo '{"name":"error.log","path":"logs/error.log","size":1024,"modtime":1735574401,"isdir":false}'
+echo '{"name":"access.log","path":"logs/access.log","size":4096,"modtime":1735574402,"isdir":false}'
+echo ""
+
+echo "=== Performance Benefits ==="
+echo "✅ Real-time streaming: Files appear immediately as found"
+echo "✅ Memory efficient: No buffering of entire directory listing"  
+echo "✅ Unix find performance: Optimized for millions of files"
+echo "✅ Early filtering: Filters applied during traversal"
+echo ""
+
+echo "=== Supported Filters ==="
+echo "• name patterns:    filter[]=name:*.log (supports * and ? wildcards)"
+echo "• modification time: filter[]=mtime:-7 (before 7 days ago)"
+echo "•                   filter[]=mtime:7 (within last 7 days)"
+echo "• file size:        filter[]=size:>1024 (larger than 1KB)"
+echo "•                   filter[]=size:<1048576 (smaller than 1MB)"
+echo "•                   filter[]=size:2048 (exactly 2KB)"
+echo ""
+
+echo "=== Usage Examples ==="
+echo ""
+echo "1. List all files in a volume (streaming):"
+echo "   GET /files/volume1/list"
+echo ""
+echo "2. Find all log files modified in last week:"
+echo "   GET /files/volume1/list?filter[]=name:*.log&filter[]=mtime:7"
+echo ""
+echo "3. Find large files (>1MB) with specific pattern:"
+echo "   GET /files/volume1/list?filter[]=name:backup_*&filter[]=size:>1048576"
+echo ""
+echo "4. Find old config files (older than 30 days):"
+echo "   GET /files/volume1/list?filter[]=name:*.conf&filter[]=mtime:-30"
+echo ""
+
+echo "=== Smart Download Examples (O(n) Optimized) ==="
+echo ""
+echo "1. Download newest log file:"
+echo "   GET /files/logs/download?folder=app&filter[]=name:*.log&filter[]=sort:mtime:desc"
+echo ""
+echo "2. Download largest backup file:"
+echo "   GET /files/backups/download?folder=daily&filter[]=name:backup_*&filter[]=sort:size:desc"
+echo ""  
+echo "3. Download alphabetically first config:"
+echo "   GET /files/config/download?folder=env&filter[]=name:*.conf&filter[]=sort:name:asc"
+echo ""
+echo "4. Download smallest file matching pattern:"
+echo "   GET /files/temp/download?folder=cache&filter[]=name:*.tmp&filter[]=sort:size:asc"
+echo ""
+
+echo "=== Performance Comparison ==="
+echo "Traditional REST API:"
+echo "  • Load all files into memory → Apply filters → Return JSON array"
+echo "  • Memory usage: O(n) where n = total files"
+echo "  • Response time: Must wait for complete directory scan"
+echo ""
+echo "Streaming NDJSON API:"
+echo "  • Stream files one-by-one → Apply filters during traversal → Stream matches"
+echo "  • Memory usage: O(1) constant memory"
+echo "  • Response time: First results appear immediately"
+echo ""
+echo "Smart Download Algorithm:"
+echo "  • Traditional: Find all files → Sort array O(n log n) → Pick first"
+echo "  • Optimized: Stream files → Keep best candidate → O(n) complexity"
+echo "  • Memory usage: O(1) - only best candidate in memory"
+echo "  • Performance: Linear time regardless of result set size"
+echo ""

@@ -87,7 +87,7 @@ func printUsage() {
 	fmt.Println("  hfit dbs <dbms>                                     List databases for DBMS provider")
 	fmt.Println("  hfit tables <dbms> <db_id>                          List tables in database")
 	fmt.Println("  hfit rows <dbms> <db_id> <table_id>                 List rows in table")
-	fmt.Println("  hfit files                                          List files")
+	fmt.Println("  hfit files <volume>                                 List files in volume (streaming)")
 	fmt.Println("  hfit pkg create <package.yaml> <name>               Create new package definition")
 	fmt.Println("  hfit pkg add <package.yaml> <name> <type> <data>    Add resource to package")
 	fmt.Println("  hfit pkg rm <package.yaml> <name>                   Remove resource from package")
@@ -204,14 +204,19 @@ func handleRowsCommand() {
 }
 
 func handleFilesCommand() {
-	client := getAuthenticatedClient()
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: hfit files <volume>")
+		fmt.Println("Example: hfit files volume1")
+		os.Exit(1)
+	}
 
-	files, err := client.ListFiles()
+	client := getAuthenticatedClient()
+	volume := os.Args[2]
+
+	err := client.StreamFiles(volume)
 	if err != nil {
 		fatalError("Failed to list files", err)
 	}
-
-	printJSON(files)
 }
 
 // PackageDefinition represents the YAML package structure

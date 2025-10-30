@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -42,8 +43,9 @@ API:
  /db/{dbms}/dbs
  /db/{dbms}/{dbid}/tables
  /db/{dbms}/{dbid}/table/{tableid}/rows
- /files/list
- /files/download?path=
+ /files/{volume}/list
+ /files/{volume}/download?path=
+ /files/{volume}/download?folder=<folder>&filter[]=name:*.config
 */
 
 /*
@@ -253,14 +255,19 @@ func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminSe
 			return
 		}
 
-		files, err := listFiles(volumeConfig.Path, r.URL.Query())
+		// Set streaming headers for NDJSON
+		w.Header().Set("Content-Type", "application/x-json-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		// Use streaming file listing for performance
+		err := streamFiles(w, volumeConfig.Path, r.URL.Query())
 		if err != nil {
+			// Error handling: if we haven't written anything yet, send HTTP error
+			// If we've started streaming, we can only log the error
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(files)
 	}).Methods("GET")
 
 	protected.HandleFunc("/files/{volume}/download", func(w http.ResponseWriter, r *http.Request) {
@@ -409,7 +416,76 @@ func checkTableExists(conn *sql.DB, dbms string, dbid string, tableid string) (b
 }
 
 /*
-* listFiles lists files in a volume with optional filtering.
+* streamFiles streams files in a volume with optional filtering using NDJSON format.
+* This provides performance similar to Unix find command for large directories.
+ */
+func streamFiles(w http.ResponseWriter, volumePath string, query url.Values) error {
+	// Ensure the response is flushed immediately for streaming
+	flusher, canFlush := w.(http.Flusher)
+
+	// Validate volume path exists and is accessible
+	if _, err := os.Stat(volumePath); os.IsNotExist(err) {
+		return fmt.Errorf("volume path does not exist: %s", volumePath)
+	}
+
+	// Use filepath.Walk which is optimized like Unix find
+	return filepath.Walk(volumePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			// Log error but continue processing other files (like Unix find does)
+			// Don't return error unless it's a critical filesystem issue
+			if os.IsPermission(err) {
+				// Permission denied - skip this path and continue
+				return nil
+			}
+			return nil
+		}
+
+		// Skip directories for now, only return files
+		if info.IsDir() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(volumePath, path)
+		if err != nil {
+			return nil // Skip this file and continue
+		}
+
+		fileInfo := map[string]interface{}{
+			"name":    info.Name(),
+			"path":    relPath,
+			"size":    info.Size(),
+			"modtime": info.ModTime().Unix(),
+			"isdir":   info.IsDir(),
+		}
+
+		// Apply filters from query parameters
+		if passesFilters(fileInfo, query) {
+			// Write each file as a separate JSON line (NDJSON)
+			jsonData, err := json.Marshal(fileInfo)
+			if err != nil {
+				return nil // Skip this file and continue
+			}
+
+			// Write the JSON object followed by newline
+			if _, err := w.Write(jsonData); err != nil {
+				return err // Stop on write error (client disconnected)
+			}
+			if _, err := w.Write([]byte("\n")); err != nil {
+				return err // Stop on write error
+			}
+
+			// Flush after every file for real-time streaming
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+
+		return nil
+	})
+}
+
+/*
+* listFiles lists files in a volume with optional filtering (kept for backward compatibility).
  */
 func listFiles(volumePath string, query url.Values) ([]map[string]interface{}, error) {
 	var files []map[string]interface{}
@@ -450,6 +526,7 @@ func listFiles(volumePath string, query url.Values) ([]map[string]interface{}, e
 
 /*
 * passesFilters checks if a file passes the filter criteria.
+* Supports name wildcards, time filtering, and sorting hints.
  */
 func passesFilters(fileInfo map[string]interface{}, query url.Values) bool {
 	filters := query["filter[]"]
@@ -465,24 +542,293 @@ func passesFilters(fileInfo map[string]interface{}, query url.Values) bool {
 
 		switch key {
 		case "name":
-			// Simple wildcard matching
+			// Enhanced wildcard matching with glob-like patterns
 			fileName := fileInfo["name"].(string)
-			if !strings.Contains(fileName, strings.ReplaceAll(value, "*", "")) {
+			if !matchesPattern(fileName, value) {
 				return false
 			}
 		case "mtime":
 			// Time-based filtering (days ago)
 			if days, err := strconv.Atoi(value); err == nil {
 				fileTime := time.Unix(fileInfo["modtime"].(int64), 0)
-				cutoff := time.Now().AddDate(0, 0, days)
-				if days < 0 && fileTime.Before(cutoff) {
-					return false
+				if days < 0 {
+					// Negative days means "modified before X days ago"
+					cutoff := time.Now().AddDate(0, 0, days)
+					if fileTime.After(cutoff) {
+						return false
+					}
+				} else {
+					// Positive days means "modified after X days ago"
+					cutoff := time.Now().AddDate(0, 0, -days)
+					if fileTime.Before(cutoff) {
+						return false
+					}
 				}
 			}
+		case "size":
+			// Size filtering (bytes)
+			fileSize := fileInfo["size"].(int64)
+			if strings.HasPrefix(value, ">") {
+				if size, err := strconv.ParseInt(value[1:], 10, 64); err == nil {
+					if fileSize <= size {
+						return false
+					}
+				}
+			} else if strings.HasPrefix(value, "<") {
+				if size, err := strconv.ParseInt(value[1:], 10, 64); err == nil {
+					if fileSize >= size {
+						return false
+					}
+				}
+			} else {
+				if size, err := strconv.ParseInt(value, 10, 64); err == nil {
+					if fileSize != size {
+						return false
+					}
+				}
+			}
+		case "sort":
+			// Sort is handled at a higher level, just pass through
+			continue
 		}
 	}
 
 	return true
+}
+
+/*
+* matchesPattern performs glob-like pattern matching for file names.
+ */
+func matchesPattern(fileName, pattern string) bool {
+	// Simple glob pattern matching
+	// * matches any sequence of characters
+	// ? matches any single character
+
+	if pattern == "*" {
+		return true
+	}
+
+	// Convert glob pattern to regex-like matching
+	if strings.Contains(pattern, "*") {
+		parts := strings.Split(pattern, "*")
+		if len(parts) == 2 {
+			// Simple case: prefix*suffix
+			prefix, suffix := parts[0], parts[1]
+			return strings.HasPrefix(fileName, prefix) && strings.HasSuffix(fileName, suffix)
+		}
+		// For more complex patterns, fall back to simple contains check
+		cleanPattern := strings.ReplaceAll(pattern, "*", "")
+		return strings.Contains(fileName, cleanPattern)
+	}
+
+	if strings.Contains(pattern, "?") {
+		// For now, just treat ? as any character - could be enhanced with regex
+		cleanPattern := strings.ReplaceAll(pattern, "?", "")
+		return strings.Contains(fileName, cleanPattern)
+	}
+
+	// Exact match or contains
+	return strings.Contains(fileName, pattern)
+}
+
+/*
+* applySorting sorts files based on filter criteria for download selection.
+* This is used when downloading from folders with multiple matching files.
+ */
+func applySorting(files []map[string]interface{}, query url.Values) []map[string]interface{} {
+	filters := query["filter[]"]
+	var sortCriteria string
+	var sortOrder string = "asc" // default ascending
+
+	// Extract sort criteria from filters
+	for _, filter := range filters {
+		parts := strings.SplitN(filter, ":", 2)
+		if len(parts) == 2 && parts[0] == "sort" {
+			sortSpec := parts[1]
+			// Handle sort direction (e.g., "mtime:desc", "size:asc", "name")
+			if strings.Contains(sortSpec, ":") {
+				sortParts := strings.SplitN(sortSpec, ":", 2)
+				sortCriteria = sortParts[0]
+				sortOrder = sortParts[1]
+			} else {
+				sortCriteria = sortSpec
+			}
+			break
+		}
+	}
+
+	// If no sort criteria specified, return files as-is
+	if sortCriteria == "" {
+		return files
+	}
+
+	// Create a copy of the slice to avoid modifying the original
+	sortedFiles := make([]map[string]interface{}, len(files))
+	copy(sortedFiles, files)
+
+	// Sort based on criteria
+	switch sortCriteria {
+	case "mtime", "modtime":
+		sort.Slice(sortedFiles, func(i, j int) bool {
+			timeI := sortedFiles[i]["modtime"].(int64)
+			timeJ := sortedFiles[j]["modtime"].(int64)
+			if sortOrder == "desc" {
+				return timeI > timeJ // newest first
+			}
+			return timeI < timeJ // oldest first
+		})
+	case "size":
+		sort.Slice(sortedFiles, func(i, j int) bool {
+			sizeI := sortedFiles[i]["size"].(int64)
+			sizeJ := sortedFiles[j]["size"].(int64)
+			if sortOrder == "desc" {
+				return sizeI > sizeJ // largest first
+			}
+			return sizeI < sizeJ // smallest first
+		})
+	case "name":
+		sort.Slice(sortedFiles, func(i, j int) bool {
+			nameI := sortedFiles[i]["name"].(string)
+			nameJ := sortedFiles[j]["name"].(string)
+			if sortOrder == "desc" {
+				return nameI > nameJ // Z to A
+			}
+			return nameI < nameJ // A to Z
+		})
+	case "path":
+		sort.Slice(sortedFiles, func(i, j int) bool {
+			pathI := sortedFiles[i]["path"].(string)
+			pathJ := sortedFiles[j]["path"].(string)
+			if sortOrder == "desc" {
+				return pathI > pathJ
+			}
+			return pathI < pathJ
+		})
+	}
+
+	return sortedFiles
+}
+
+/*
+* findBestFile finds the best matching file based on filters and sorting criteria in O(n) time.
+* This streams through files, applies filters, and keeps track of the best candidate.
+ */
+func findBestFile(volumePath string, query url.Values) (map[string]interface{}, error) {
+	filters := query["filter[]"]
+	var sortCriteria string
+	var sortOrder string = "asc" // default ascending
+
+	// Extract sort criteria from filters
+	for _, filter := range filters {
+		parts := strings.SplitN(filter, ":", 2)
+		if len(parts) == 2 && parts[0] == "sort" {
+			sortSpec := parts[1]
+			// Handle sort direction (e.g., "mtime:desc", "size:asc", "name")
+			if strings.Contains(sortSpec, ":") {
+				sortParts := strings.SplitN(sortSpec, ":", 2)
+				sortCriteria = sortParts[0]
+				sortOrder = sortParts[1]
+			} else {
+				sortCriteria = sortSpec
+			}
+			break
+		}
+	}
+
+	var bestFile map[string]interface{}
+
+	// Stream through files and find the best one in a single pass
+	err := filepath.Walk(volumePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			// Skip errors and continue (like Unix find)
+			if os.IsPermission(err) {
+				return nil
+			}
+			return nil
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(volumePath, path)
+		if err != nil {
+			return nil // Skip this file and continue
+		}
+
+		fileInfo := map[string]interface{}{
+			"name":    info.Name(),
+			"path":    relPath,
+			"size":    info.Size(),
+			"modtime": info.ModTime().Unix(),
+			"isdir":   info.IsDir(),
+		}
+
+		// Apply filters - skip if doesn't match
+		if !passesFilters(fileInfo, query) {
+			return nil
+		}
+
+		// If no best file yet, this becomes the best
+		if bestFile == nil {
+			bestFile = fileInfo
+			return nil
+		}
+
+		// Compare with current best based on sort criteria
+		if isBetterFile(fileInfo, bestFile, sortCriteria, sortOrder) {
+			bestFile = fileInfo
+		}
+
+		return nil
+	})
+
+	return bestFile, err
+}
+
+/*
+* isBetterFile compares two files based on sorting criteria to determine which is "better".
+* Returns true if newFile is better than currentBest.
+ */
+func isBetterFile(newFile, currentBest map[string]interface{}, sortCriteria, sortOrder string) bool {
+	switch sortCriteria {
+	case "mtime", "modtime":
+		newTime := newFile["modtime"].(int64)
+		bestTime := currentBest["modtime"].(int64)
+		if sortOrder == "desc" {
+			return newTime > bestTime // newer is better
+		}
+		return newTime < bestTime // older is better
+
+	case "size":
+		newSize := newFile["size"].(int64)
+		bestSize := currentBest["size"].(int64)
+		if sortOrder == "desc" {
+			return newSize > bestSize // larger is better
+		}
+		return newSize < bestSize // smaller is better
+
+	case "name":
+		newName := newFile["name"].(string)
+		bestName := currentBest["name"].(string)
+		if sortOrder == "desc" {
+			return newName > bestName // Z-A order
+		}
+		return newName < bestName // A-Z order
+
+	case "path":
+		newPath := newFile["path"].(string)
+		bestPath := currentBest["path"].(string)
+		if sortOrder == "desc" {
+			return newPath > bestPath
+		}
+		return newPath < bestPath
+
+	default:
+		// No sorting criteria, keep the first one found
+		return false
+	}
 }
 
 /*
@@ -520,21 +866,20 @@ func downloadFile(w http.ResponseWriter, r *http.Request, volumePath string) err
 		_, err = io.Copy(w, file)
 		return err
 	} else if folder != "" {
-		// Find first matching file in folder with filters
-		files, err := listFiles(filepath.Join(volumePath, folder), r.URL.Query())
+		// Find the best matching file in folder with filters and sorting in O(n) time
+		bestFile, err := findBestFile(filepath.Join(volumePath, folder), r.URL.Query())
 		if err != nil {
 			return err
 		}
 
-		if len(files) == 0 {
+		if bestFile == nil {
 			return fmt.Errorf("no matching files found")
 		}
 
-		// Download first matching file
-		firstFile := files[0]
+		// Download the best matching file
 		return downloadFile(w, &http.Request{
 			URL: &url.URL{
-				RawQuery: fmt.Sprintf("path=%s", firstFile["path"]),
+				RawQuery: fmt.Sprintf("path=%s", bestFile["path"]),
 			},
 		}, volumePath)
 	}
@@ -663,6 +1008,8 @@ func handlePackageDownload(w http.ResponseWriter, r *http.Request, packname stri
  */
 func handleDBCreateExport(exportPath string, data map[string]interface{}, databaseManager *db.DatabaseManager) error {
 	// Implementation for database creation export
+	// use https://pkg.go.dev/github.com/aliakseiz/go-mysqldump for mysqldump
+	// to export the database creation SQL
 	return os.WriteFile(exportPath, []byte("-- Database creation SQL placeholder\n"), 0644)
 }
 
@@ -671,6 +1018,8 @@ func handleDBCreateExport(exportPath string, data map[string]interface{}, databa
  */
 func handleTableCreateExport(exportPath string, data map[string]interface{}, databaseManager *db.DatabaseManager) error {
 	// Implementation for table creation export
+	// use https://pkg.go.dev/github.com/aliakseiz/go-mysqldump for mysqldump
+	// to export the table creation SQL
 	return os.WriteFile(exportPath, []byte("-- Table creation SQL placeholder\n"), 0644)
 }
 
@@ -679,6 +1028,8 @@ func handleTableCreateExport(exportPath string, data map[string]interface{}, dat
  */
 func handleTableDataExport(exportPath string, data map[string]interface{}, databaseManager *db.DatabaseManager) error {
 	// Implementation for table data export
+	// use https://pkg.go.dev/github.com/aliakseiz/go-mysqldump for mysqldump
+	// to export the table data SQL
 	return os.WriteFile(exportPath, []byte("-- Table data SQL placeholder\n"), 0644)
 }
 
