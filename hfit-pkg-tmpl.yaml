@@ -1,0 +1,52 @@
+## Example of hfit package template YAML file
+hfitVersion: 1
+templateName: usecase_data
+name: basedata_$1
+prepare:
+  - setVar: dataid
+    from: input
+    source: $1
+  - setVar: usrId
+    from: hot-data
+    hdata:
+        type: dbquery
+        dbms: dbms_mysql1
+        query: "SELECT usrId FROM dbname.datatable WHERE dataid=${dataid} ORDER BY utime LIMIT 1"
+  - setVar: fBaseName
+    from: hot-data
+    hdata:
+        type: volume
+        volume: vol1
+        glob: "*_{dataid}_{usrId}_*.txt"
+        # take the first in mtime desc order:
+        sort: "mtime|desc"
+        # extract the first number of filename as fBaseName value
+        regex_replace: "/([0-9]+).*/$1/"
+exports:
+  dbcreate.sql:
+    type: dbcreate
+    data:
+      dbms: dbms_mysql1
+      tablelist:
+        - dbname1
+        - dbname2
+  tablegroup1.create.sql:
+    type: table-create
+    data:
+      dbms: dbms_mysql1
+      tablelist:
+        - dbname1.table1
+        - dbname2.table2
+        - dbname1.tablex
+      option: <dropcreate|ifnotexists>
+  tabledata1.data.sql:
+    type: table-data
+    data:
+      dbms: dbms_mysql1
+      table: dbname1.table1
+      filter: WHERE key<34 AND key>12
+  target-filename.txt:
+    type: file
+    data:
+      volume: datavol1
+      path: relative/path/to/file_${dataid}_${usrId}_${fBaseName}.txt
