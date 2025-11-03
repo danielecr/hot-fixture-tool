@@ -12,8 +12,11 @@ package fileapi
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"strings"
 
+	"hfitd/apierrors"
 	"hfitd/config"
 
 	"github.com/gorilla/mux"
@@ -133,13 +136,42 @@ func (h *FileHandlers) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	volumeConfig, exists := h.config.Volumes[volume]
 	if !exists {
-		http.Error(w, "Volume not found", http.StatusNotFound)
+		apiErr := apierrors.NewVolumeNotFoundError(volume)
+		apierrors.WriteErrorResponse(w, apiErr)
+		return
+	}
+
+	filePath := r.URL.Query().Get("path")
+	if filePath == "" {
+		apiErr := apierrors.NewParameterMissingError("path")
+		apierrors.WriteErrorResponse(w, apiErr)
 		return
 	}
 
 	err := DownloadFile(w, r, volumeConfig.Path)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "no such file") {
+			apiErr := apierrors.NewFileNotFoundError(volume, filePath)
+			apierrors.WriteErrorResponse(w, apiErr)
+		} else {
+			// Log technical details server-side for debugging
+			log.Printf("[ERROR] File access failed for %s:%s: %v", volume, filePath, err)
+
+			// Generic file access error
+			apiErr := &apierrors.APIError{
+				Category: apierrors.CategoryInternal,
+				Code:     "FILE_ACCESS_ERROR",
+				Message:  "Failed to access file",
+				Details:  "", // Never expose technical details to clients
+				Resource: volume + ":" + filePath,
+				Suggestions: []string{
+					"Contact your administrator for assistance with file access",
+					"Verify that the file and volume are properly configured",
+				},
+			}
+			apierrors.WriteErrorResponse(w, apiErr)
+		}
 		return
 	}
 }

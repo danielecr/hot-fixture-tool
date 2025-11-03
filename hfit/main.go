@@ -20,6 +20,7 @@ import (
 	"hfit/api"
 	"hfit/auth"
 	"hfit/config"
+	"hfit/errors"
 	"hfit/usage"
 )
 
@@ -33,6 +34,67 @@ func fatalError(msg string, err error) {
 	fmt.Fprintf(os.Stderr, "\nFor support, contact: Daniele Cruciani <daniele@smartango.com>\n")
 	fmt.Fprintf(os.Stderr, "Project repository: https://github.com/danielecr/hot-fixture-tool\n")
 	os.Exit(1)
+}
+
+// fatalAPIError handles API errors with user-friendly formatting
+func fatalAPIError(err error) {
+	if err == nil {
+		return
+	}
+
+	errMsg := err.Error()
+
+	// Check if it's an API request error with status code
+	if strings.Contains(errMsg, "API request failed with status") {
+		// Extract status code and error body
+		parts := strings.SplitN(errMsg, ": ", 2)
+		if len(parts) >= 2 {
+			// parts[0] = "API request failed with status XXX"
+			// parts[1] = error body (JSON)
+			errorBody := parts[1]
+
+			// Extract status code
+			if strings.Contains(parts[0], "status ") {
+				statusParts := strings.Split(parts[0], "status ")
+				if len(statusParts) > 1 {
+					statusCode := strings.Fields(statusParts[1])[0]
+					if code := parseStatusCode(statusCode); code > 0 {
+						friendlyMsg := errors.FormatAPIError(code, errorBody)
+						fmt.Fprintf(os.Stderr, "%s\n", friendlyMsg)
+						fmt.Fprintf(os.Stderr, "\nFor support, contact: Daniele Cruciani <daniele@smartango.com>\n")
+						fmt.Fprintf(os.Stderr, "Project repository: https://github.com/danielecr/hot-fixture-tool\n")
+						os.Exit(1)
+						return
+					}
+				}
+			}
+		}
+	} // Fallback to regular error handling
+	fatalError("Request failed", err)
+}
+
+// parseStatusCode extracts integer status code from string
+func parseStatusCode(statusStr string) int {
+	switch statusStr {
+	case "400":
+		return 400
+	case "401":
+		return 401
+	case "403":
+		return 403
+	case "404":
+		return 404
+	case "429":
+		return 429
+	case "500":
+		return 500
+	case "502":
+		return 502
+	case "503":
+		return 503
+	default:
+		return 0
+	}
 }
 
 func main() {
@@ -182,7 +244,7 @@ func handleDbmssCommand() {
 
 	providers, err := client.ListDBMSProviders()
 	if err != nil {
-		fatalError("Failed to list DBMS providers", err)
+		fatalAPIError(err)
 	}
 
 	printJSON(providers)
@@ -199,7 +261,7 @@ func handleDbsCommand() {
 
 	databases, err := client.ListDatabases(dbms)
 	if err != nil {
-		fatalError("Failed to list databases", err)
+		fatalAPIError(err)
 	}
 
 	printJSON(databases)
@@ -217,7 +279,7 @@ func handleTablesCommand() {
 
 	tables, err := client.ListTables(dbms, dbID)
 	if err != nil {
-		fatalError("Failed to list tables", err)
+		fatalAPIError(err)
 	}
 
 	printJSON(tables)
@@ -246,7 +308,7 @@ func handleRowsCommand() {
 
 	err := client.StreamRows(dbms, dbID, tableID, filterpart)
 	if err != nil {
-		fatalError("Failed to stream rows", err)
+		fatalAPIError(err)
 	}
 }
 
@@ -275,12 +337,12 @@ func handleFilesCommand() {
 		filters = os.Args[3:]
 		err := client.StreamFilesWithFilters(volume, filters)
 		if err != nil {
-			fatalError("Failed to stream files with filters", err)
+			fatalAPIError(err)
 		}
 	} else {
 		err := client.StreamFiles(volume)
 		if err != nil {
-			fatalError("Failed to stream files", err)
+			fatalAPIError(err)
 		}
 	}
 }
@@ -421,7 +483,7 @@ func handleDownloadCommand() {
 
 	data, err := client.DownloadFile(volumePath)
 	if err != nil {
-		fatalError("Failed to download file", err)
+		fatalAPIError(err)
 	}
 
 	fmt.Print(string(data))
@@ -490,7 +552,7 @@ func handlePkgDownloadCommand() {
 	// Call the package generation API with template name and parameters
 	err = client.GenerateAndDownloadPackage(templateName, params)
 	if err != nil {
-		fatalError("Failed to generate and download package", err)
+		fatalAPIError(err)
 	}
 
 	fmt.Printf("Package generated and downloaded successfully from template '%s'\n", templateName)
@@ -512,7 +574,7 @@ func handlePkgTmplList() {
 
 	templates, err := client.ListTemplates()
 	if err != nil {
-		fatalError("Failed to list templates", err)
+		fatalAPIError(err)
 	}
 
 	if len(templates) == 0 {
@@ -549,7 +611,7 @@ func handlePkgTmplShow() {
 
 	templateYAML, err := client.GetTemplate(templateName)
 	if err != nil {
-		fatalError("Failed to get template", err)
+		fatalAPIError(err)
 	}
 
 	fmt.Print(templateYAML)
@@ -584,7 +646,7 @@ func handlePkgTmplCreate() {
 
 	err = client.CreateTemplate(yamlContent)
 	if err != nil {
-		fatalError("Failed to create template", err)
+		fatalAPIError(err)
 	}
 
 	fmt.Printf("Template created successfully from file '%s'\n", templateFile)
@@ -619,7 +681,7 @@ func handlePkgTmplUpdate() {
 
 	err = client.UpdateTemplate(yamlContent)
 	if err != nil {
-		fatalError("Failed to update template", err)
+		fatalAPIError(err)
 	}
 
 	fmt.Printf("Template updated successfully from file '%s'\n", templateFile)
@@ -654,7 +716,7 @@ func handlePkgTmplPatch() {
 
 	diffOutput, err := client.PatchTemplate(yamlContent)
 	if err != nil {
-		fatalError("Failed to patch template", err)
+		fatalAPIError(err)
 	}
 
 	fmt.Print(diffOutput)
@@ -683,7 +745,7 @@ func handlePkgTmplDelete() {
 
 	err = client.DeleteTemplate(templateName)
 	if err != nil {
-		fatalError("Failed to delete template", err)
+		fatalAPIError(err)
 	}
 
 	fmt.Printf("Template '%s' deleted successfully\n", templateName)

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"hfitd/apierrors"
 	"hfitd/config"
 	"hfitd/db"
 	"hfitd/pkgtmpl"
@@ -101,7 +102,15 @@ func (h *TemplateHandlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 
 	err := HandleGetTemplate(w, r, userEmail, templateName, h.templateStorage)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Check if it's a "not found" error
+		if strings.Contains(strings.ToLower(err.Error()), "key not found") {
+			apiErr := apierrors.NewTemplateNotFoundError(templateName)
+			apierrors.WriteErrorResponse(w, apiErr)
+		} else {
+			// Generic template processing error
+			apiErr := apierrors.NewTemplateProcessingError(templateName, err)
+			apierrors.WriteErrorResponse(w, apiErr)
+		}
 		return
 	}
 }

@@ -13,7 +13,9 @@ package dbapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
+	"hfitd/apierrors"
 	"hfitd/db"
 
 	"github.com/gorilla/mux"
@@ -69,14 +71,26 @@ func (h *DatabaseHandlers) GetDatabases(w http.ResponseWriter, r *http.Request) 
 
 	conn, err := h.databaseManager.GetConnection(dbms)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		// Check if it's a provider not found or connection error
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "unknown") {
+			apiErr := apierrors.NewDBProviderNotFoundError(dbms)
+			apierrors.WriteErrorResponse(w, apiErr)
+		} else if strings.Contains(errMsg, "connection refused") || strings.Contains(errMsg, "dial") {
+			apiErr := apierrors.NewDBConnectionError(dbms, err)
+			apierrors.WriteErrorResponse(w, apiErr)
+		} else {
+			apiErr := apierrors.NewDBConnectionError(dbms, err)
+			apierrors.WriteErrorResponse(w, apiErr)
+		}
 		return
 	}
 
 	// Get databases for this DBMS provider
 	databases, err := GetDatabases(conn, dbms, h.databaseManager)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		apiErr := apierrors.NewDBConnectionError(dbms, err)
+		apierrors.WriteErrorResponse(w, apiErr)
 		return
 	}
 
