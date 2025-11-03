@@ -17,6 +17,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"strings"
 	"time"
 
 	"hfitd/config"
@@ -82,22 +83,81 @@ func (c *Client) GetUserPublicKey(ctx context.Context, userEmail string) (*rsa.P
 	return rsaPublicKey, nil
 }
 
-// SetUserPublicKey stores a public key for a user
-func (c *Client) SetUserPublicKey(ctx context.Context, userEmail, publicKeyPEM string) error {
+// GetUserPublicKeyString retrieves the raw public key string for a user (supports multiple formats)
+func (c *Client) GetUserPublicKeyString(ctx context.Context, userEmail string) (string, error) {
 	keyName := fmt.Sprintf("user__%s", userEmail)
 
-	// Validate the public key before storing
-	block, _ := pem.Decode([]byte(publicKeyPEM))
-	if block == nil {
-		return fmt.Errorf("invalid PEM format for user: %s", userEmail)
+	publicKeyStr, err := c.rdb.Get(ctx, keyName).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", fmt.Errorf("public key not found for user: %s", userEmail)
+		}
+		return "", fmt.Errorf("failed to get public key from Redis: %v", err)
 	}
 
-	_, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
+	return publicKeyStr, nil
+}
+
+// SetUserPublicKey stores a public key for a user
+func (c *Client) SetUserPublicKey(ctx context.Context, userEmail, publicKey string) error {
+	keyName := fmt.Sprintf("user__%s", userEmail)
+
+	// Detect and validate the public key format
+	if err := validatePublicKey(publicKey); err != nil {
 		return fmt.Errorf("invalid public key for user %s: %v", userEmail, err)
 	}
 
-	return c.rdb.Set(ctx, keyName, publicKeyPEM, 0).Err()
+	// Store the key as-is, maintaining the original format
+	return c.rdb.Set(ctx, keyName, publicKey, 0).Err()
+}
+
+// validatePublicKey validates both PEM and OpenSSH format public keys
+func validatePublicKey(publicKey string) error {
+	publicKey = strings.TrimSpace(publicKey)
+
+	// Check if it's PEM format
+	if strings.Contains(publicKey, "-----BEGIN") {
+		block, _ := pem.Decode([]byte(publicKey))
+		if block == nil {
+			return fmt.Errorf("invalid PEM format")
+		}
+		_, err := x509.ParsePKIXPublicKey(block.Bytes)
+		if err != nil {
+			return fmt.Errorf("invalid PEM public key: %v", err)
+		}
+		return nil
+	}
+
+	// Check if it's OpenSSH format (algorithm + base64 + optional comment)
+	parts := strings.Fields(publicKey)
+	if len(parts) < 2 {
+		return fmt.Errorf("invalid key format: expected PEM or OpenSSH format")
+	}
+
+	algorithm := parts[0]
+	supportedAlgorithms := []string{
+		"ssh-rsa",
+		"ssh-ed25519",
+		"ecdsa-sha2-nistp256",
+		"ecdsa-sha2-nistp384",
+		"ecdsa-sha2-nistp521",
+	}
+
+	algorithmSupported := false
+	for _, supported := range supportedAlgorithms {
+		if algorithm == supported {
+			algorithmSupported = true
+			break
+		}
+	}
+
+	if !algorithmSupported {
+		return fmt.Errorf("unsupported key algorithm: %s", algorithm)
+	}
+
+	// The key appears to be in valid OpenSSH format
+	// We could add more validation here if needed (e.g., base64 decoding)
+	return nil
 }
 
 // DeleteUserPublicKey removes a user's public key
