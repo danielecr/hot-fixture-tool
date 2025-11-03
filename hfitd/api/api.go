@@ -84,25 +84,7 @@ func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminSe
 
 	// Well-known JWT public key endpoint (RFC 7517 style)
 	router.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
-		jwtPublicKeyPEM, err := adminServer.GetJWTPublicKeyPEM()
-		if err != nil {
-			http.Error(w, "JWT public key not available", http.StatusInternalServerError)
-			return
-		}
-
-		// Return in JWKS format
-		jwks := map[string]interface{}{
-			"keys": []map[string]interface{}{
-				{
-					"kty": "RSA",
-					"use": "sig",
-					"key": jwtPublicKeyPEM,
-				},
-			},
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(jwks)
+		handleJWKS(w, r, adminServer)
 	}).Methods("GET")
 
 	// Authentication routes (unprotected)
@@ -163,10 +145,48 @@ func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminSe
 	return router, nil
 }
 
-/*
-* healthCheckHandler provides a simple health check endpoint.
- */
+// healthCheckHandler godoc
+//
+//	@Summary		Health check
+//	@Description	Simple health check endpoint to verify service availability
+//	@Tags			system
+//	@Accept			json
+//	@Produce		plain
+//	@Success		200		{string}	string	"OK"
+//	@Router			/health [get]
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
+}
+
+// handleJWKS godoc
+//
+//	@Summary		Get JSON Web Key Set
+//	@Description	Get the JSON Web Key Set (JWKS) containing the public key for JWT verification
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Success		200		{object}	object	"JWKS with public keys"
+//	@Failure		500		{object}	map[string]string	"Internal server error"
+//	@Router			/.well-known/jwks.json [get]
+func handleJWKS(w http.ResponseWriter, r *http.Request, adminServer *admin.AdminServer) {
+	jwtPublicKeyPEM, err := adminServer.GetJWTPublicKeyPEM()
+	if err != nil {
+		http.Error(w, "JWT public key not available", http.StatusInternalServerError)
+		return
+	}
+
+	// Return in JWKS format
+	jwks := map[string]interface{}{
+		"keys": []map[string]interface{}{
+			{
+				"kty": "RSA",
+				"use": "sig",
+				"key": jwtPublicKeyPEM,
+			},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(jwks)
 }

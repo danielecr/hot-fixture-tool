@@ -67,7 +67,18 @@ func NewAuthManager(jwtSecret []byte, redisClient *redisclient.Client) (*AuthMan
 	}, nil
 }
 
-// GenerateChallenge creates a random challenge for the client to sign
+// GenerateChallenge godoc
+//
+//	@Summary		Generate authentication challenge
+//	@Description	Generate a random challenge for public key authentication
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request		body		ChallengeRequest	true	"Challenge request with username"
+//	@Success		200			{object}	ChallengeResponse	"Challenge generated successfully"
+//	@Failure		400			{object}	map[string]string	"Bad request"
+//	@Failure		500			{object}	map[string]string	"Internal server error"
+//	@Router			/auth/challenge [post]
 func (am *AuthManager) GenerateChallenge(w http.ResponseWriter, r *http.Request) {
 	var req ChallengeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -99,7 +110,19 @@ func (am *AuthManager) GenerateChallenge(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(response)
 }
 
-// Authenticate verifies the signed challenge and issues a JWT token
+// Authenticate godoc
+//
+//	@Summary		Authenticate with signed challenge
+//	@Description	Verify the signed challenge and issue a JWT token
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request		body		AuthRequest		true	"Authentication request with signed challenge"
+//	@Success		200			{object}	AuthResponse	"Authentication successful, JWT token issued"
+//	@Failure		400			{object}	map[string]string	"Bad request"
+//	@Failure		401			{object}	map[string]string	"Unauthorized - invalid signature"
+//	@Failure		500			{object}	map[string]string	"Internal server error"
+//	@Router			/auth/authenticate [post]
 func (am *AuthManager) Authenticate(w http.ResponseWriter, r *http.Request) {
 	var req AuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

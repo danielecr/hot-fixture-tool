@@ -1,4 +1,33 @@
 basePath: /api
+definitions:
+  auth.AuthRequest:
+    properties:
+      challenge:
+        type: string
+      signature:
+        type: string
+      username:
+        type: string
+    type: object
+  auth.AuthResponse:
+    properties:
+      expires_at:
+        type: integer
+      token:
+        type: string
+    type: object
+  auth.ChallengeRequest:
+    properties:
+      username:
+        type: string
+    type: object
+  auth.ChallengeResponse:
+    properties:
+      challenge:
+        type: string
+      expires_at:
+        type: integer
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -11,7 +40,813 @@ info:
   termsOfService: https://github.com/danielecr/hot-fixture-tool
   title: Hot Fixture Tool Daemon API
   version: 1.0.0
-paths: {}
+paths:
+  /.well-known/jwks.json:
+    get:
+      consumes:
+      - application/json
+      description: Get the JSON Web Key Set (JWKS) containing the public key for JWT
+        verification
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: JWKS with public keys
+          schema:
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get JSON Web Key Set
+      tags:
+      - auth
+  /auth/authenticate:
+    post:
+      consumes:
+      - application/json
+      description: Verify the signed challenge and issue a JWT token
+      parameters:
+      - description: Authentication request with signed challenge
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/auth.AuthRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Authentication successful, JWT token issued
+          schema:
+            $ref: '#/definitions/auth.AuthResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized - invalid signature
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Authenticate with signed challenge
+      tags:
+      - auth
+  /auth/challenge:
+    post:
+      consumes:
+      - application/json
+      description: Generate a random challenge for public key authentication
+      parameters:
+      - description: Challenge request with username
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/auth.ChallengeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Challenge generated successfully
+          schema:
+            $ref: '#/definitions/auth.ChallengeResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Generate authentication challenge
+      tags:
+      - auth
+  /db/{dbms}:
+    head:
+      description: Check if a DBMS provider connection is available
+      parameters:
+      - description: DBMS provider name
+        example: mysql
+        in: path
+        name: dbms
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+      security:
+      - BearerAuth: []
+      summary: Check DBMS provider exists
+      tags:
+      - database
+  /db/{dbms}/{dbid}:
+    head:
+      description: Check if a specific database exists in the DBMS
+      parameters:
+      - description: DBMS provider name
+        example: mysql
+        in: path
+        name: dbms
+        required: true
+        type: string
+      - description: Database name
+        example: myapp_db
+        in: path
+        name: dbid
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+      security:
+      - BearerAuth: []
+      summary: Check database exists
+      tags:
+      - database
+  /db/{dbms}/{dbid}/table/{tableid}:
+    head:
+      description: Check if a specific table exists in the database
+      parameters:
+      - description: DBMS provider name
+        example: mysql
+        in: path
+        name: dbms
+        required: true
+        type: string
+      - description: Database name
+        example: myapp_db
+        in: path
+        name: dbid
+        required: true
+        type: string
+      - description: Table name
+        example: users
+        in: path
+        name: tableid
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+      security:
+      - BearerAuth: []
+      summary: Check table exists
+      tags:
+      - database
+  /db/{dbms}/{dbid}/table/{tableid}/rows:
+    get:
+      consumes:
+      - application/json
+      description: Get rows from a specific table with optional filtering
+      parameters:
+      - description: DBMS provider name
+        example: mysql
+        in: path
+        name: dbms
+        required: true
+        type: string
+      - description: Database name
+        example: myapp_db
+        in: path
+        name: dbid
+        required: true
+        type: string
+      - description: Table name
+        example: users
+        in: path
+        name: tableid
+        required: true
+        type: string
+      - description: SQL filter clause
+        example: '"WHERE id > 100 ORDER BY name DESC"'
+        in: query
+        name: filterpart
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Table rows
+          schema:
+            items:
+              type: object
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get table rows
+      tags:
+      - database
+  /db/{dbms}/{dbid}/tables:
+    get:
+      consumes:
+      - application/json
+      description: Get list of all tables in a specific database
+      parameters:
+      - description: DBMS provider name
+        example: mysql
+        in: path
+        name: dbms
+        required: true
+        type: string
+      - description: Database name
+        example: myapp_db
+        in: path
+        name: dbid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of table names
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: Bad request - invalid DBMS or database
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List tables
+      tags:
+      - database
+  /db/{dbms}/dbs:
+    get:
+      consumes:
+      - application/json
+      description: Get list of all databases for a specific DBMS
+      parameters:
+      - description: DBMS provider name
+        example: mysql
+        in: path
+        name: dbms
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of database names
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: Bad request - invalid DBMS
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List databases
+      tags:
+      - database
+  /db/dbmss:
+    get:
+      consumes:
+      - application/json
+      description: Get list of all available database management systems
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of DBMS providers
+          schema:
+            items:
+              type: string
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List DBMS providers
+      tags:
+      - database
+  /files/{volume}/{filepath}:
+    head:
+      description: Check if a specific file exists in a volume
+      parameters:
+      - description: Volume name
+        example: data
+        in: path
+        name: volume
+        required: true
+        type: string
+      - description: File path
+        example: documents/report.pdf
+        in: path
+        name: filepath
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+      security:
+      - BearerAuth: []
+      summary: Check file exists
+      tags:
+      - files
+  /files/{volume}/download:
+    get:
+      consumes:
+      - application/json
+      description: Download a specific file from a volume
+      parameters:
+      - description: Volume name
+        example: data
+        in: path
+        name: volume
+        required: true
+        type: string
+      - description: File path
+        example: documents/report.pdf
+        in: query
+        name: filepath
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: File content
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Volume or file not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download file
+      tags:
+      - files
+  /files/{volume}/list:
+    get:
+      consumes:
+      - application/json
+      description: Get list of all files in a specific volume with optional filtering
+      parameters:
+      - description: Volume name
+        example: data
+        in: path
+        name: volume
+        required: true
+        type: string
+      produces:
+      - application/x-json-stream
+      responses:
+        "200":
+          description: Stream of file information objects
+          schema:
+            items:
+              type: object
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Volume not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List files in volume
+      tags:
+      - files
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Simple health check endpoint to verify service availability
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Health check
+      tags:
+      - system
+  /packdownload/{templatename}:
+    post:
+      consumes:
+      - application/json
+      description: Download a rendered package template with parameters
+      parameters:
+      - description: Template name
+        example: webapp-starter
+        in: path
+        name: templatename
+        required: true
+        type: string
+      - description: Template parameters
+        in: body
+        name: parameters
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/gzip
+      responses:
+        "200":
+          description: Template package file
+          schema:
+            type: file
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Template not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download package template
+      tags:
+      - templates
+  /packtmpl:
+    get:
+      consumes:
+      - application/json
+      description: Get list of all package templates for the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of template objects
+          schema:
+            items:
+              type: object
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List package templates
+      tags:
+      - templates
+  /packtmpl/{templatename}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a specific package template
+      parameters:
+      - description: Template name
+        example: webapp-starter
+        in: path
+        name: templatename
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Template not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete package template
+      tags:
+      - templates
+    get:
+      consumes:
+      - application/json
+      description: Get a specific package template by name
+      parameters:
+      - description: Template name
+        example: webapp-starter
+        in: path
+        name: templatename
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Template object
+          schema:
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Template not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get package template
+      tags:
+      - templates
+    post:
+      consumes:
+      - application/json
+      description: Create or update a package template
+      parameters:
+      - description: Template name
+        example: webapp-starter
+        in: path
+        name: templatename
+        required: true
+        type: string
+      - description: Template data
+        in: body
+        name: template
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create/Update package template
+      tags:
+      - templates
+  /packtmplpackupld:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload multiple package templates in a single request
+      parameters:
+      - description: Templates archive file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Bulk upload package templates
+      tags:
+      - templates
+  /volumes:
+    get:
+      consumes:
+      - application/json
+      description: Get list of all configured volumes
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of volume names
+          schema:
+            items:
+              type: string
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List volumes
+      tags:
+      - files
+  /volumes/{volume}:
+    head:
+      description: Check if a specific volume is configured
+      parameters:
+      - description: Volume name
+        example: data
+        in: path
+        name: volume
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+      security:
+      - BearerAuth: []
+      summary: Check volume exists
+      tags:
+      - files
 securityDefinitions:
   BearerAuth:
     description: JWT Bearer token authentication

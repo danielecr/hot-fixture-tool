@@ -32,107 +32,212 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// TemplateHandlers contains the dependencies needed for template operations
+type TemplateHandlers struct {
+	config          *config.Config
+	databaseManager *db.DatabaseManager
+	redisClient     *redisclient.Client
+	templateStorage *tmplstorage.TemplateStorage
+}
+
+// NewTemplateHandlers creates a new TemplateHandlers instance
+func NewTemplateHandlers(cfg *config.Config, databaseManager *db.DatabaseManager, redisClient *redisclient.Client) *TemplateHandlers {
+	return &TemplateHandlers{
+		config:          cfg,
+		databaseManager: databaseManager,
+		redisClient:     redisClient,
+		templateStorage: tmplstorage.NewTemplateStorage(redisClient),
+	}
+}
+
+// GetTemplates godoc
+//
+//	@Summary		List package templates
+//	@Description	Get list of all package templates for the authenticated user
+//	@Tags			templates
+//	@Accept			json
+//	@Produce		json
+//	@Success		200		{array}		object	"List of template objects"
+//	@Failure		401		{object}	map[string]string	"Unauthorized"
+//	@Failure		500		{object}	map[string]string	"Internal server error"
+//	@Security		BearerAuth
+//	@Router			/packtmpl [get]
+func (h *TemplateHandlers) GetTemplates(w http.ResponseWriter, r *http.Request) {
+	userEmail := r.Header.Get("X-User")
+	if userEmail == "" {
+		http.Error(w, "User not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	err := HandleListTemplates(w, r, userEmail, h.templateStorage)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+// GetTemplate godoc
+//
+//	@Summary		Get package template
+//	@Description	Get a specific package template by name
+//	@Tags			templates
+//	@Accept			json
+//	@Produce		json
+//	@Param			templatename	path		string	true	"Template name"	example(webapp-starter)
+//	@Success		200				{object}	object	"Template object"
+//	@Failure		401				{object}	map[string]string	"Unauthorized"
+//	@Failure		404				{object}	map[string]string	"Template not found"
+//	@Failure		500				{object}	map[string]string	"Internal server error"
+//	@Security		BearerAuth
+//	@Router			/packtmpl/{templatename} [get]
+func (h *TemplateHandlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	templateName := vars["templatename"]
+	userEmail := r.Header.Get("X-User")
+	if userEmail == "" {
+		http.Error(w, "User not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	err := HandleGetTemplate(w, r, userEmail, templateName, h.templateStorage)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+// CreateTemplate godoc
+//
+//	@Summary		Create/Update package template
+//	@Description	Create or update a package template
+//	@Tags			templates
+//	@Accept			json
+//	@Produce		json
+//	@Param			templatename	path		string	true	"Template name"	example(webapp-starter)
+//	@Param			template		body		object	true	"Template data"
+//	@Success		200				{object}	map[string]string	"Success message"
+//	@Failure		400				{object}	map[string]string	"Bad request"
+//	@Failure		401				{object}	map[string]string	"Unauthorized"
+//	@Failure		500				{object}	map[string]string	"Internal server error"
+//	@Security		BearerAuth
+//	@Router			/packtmpl/{templatename} [post]
+func (h *TemplateHandlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	templateName := vars["templatename"]
+	userEmail := r.Header.Get("X-User")
+	if userEmail == "" {
+		http.Error(w, "User not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	err := HandleSetTemplate(w, r, userEmail, templateName, h.templateStorage)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+// DeleteTemplate godoc
+//
+//	@Summary		Delete package template
+//	@Description	Delete a specific package template
+//	@Tags			templates
+//	@Accept			json
+//	@Produce		json
+//	@Param			templatename	path		string	true	"Template name"	example(webapp-starter)
+//	@Success		200				{object}	map[string]string	"Success message"
+//	@Failure		401				{object}	map[string]string	"Unauthorized"
+//	@Failure		404				{object}	map[string]string	"Template not found"
+//	@Failure		500				{object}	map[string]string	"Internal server error"
+//	@Security		BearerAuth
+//	@Router			/packtmpl/{templatename} [delete]
+func (h *TemplateHandlers) DeleteTemplate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	templateName := vars["templatename"]
+	userEmail := r.Header.Get("X-User")
+	if userEmail == "" {
+		http.Error(w, "User not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	err := HandleDeleteTemplate(w, r, userEmail, templateName, h.templateStorage)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+// BulkUploadTemplates godoc
+//
+//	@Summary		Bulk upload package templates
+//	@Description	Upload multiple package templates in a single request
+//	@Tags			templates
+//	@Accept			multipart/form-data
+//	@Produce		json
+//	@Param			file	formData	file	true	"Templates archive file"
+//	@Success		200		{object}	map[string]string	"Success message"
+//	@Failure		400		{object}	map[string]string	"Bad request"
+//	@Failure		401		{object}	map[string]string	"Unauthorized"
+//	@Failure		500		{object}	map[string]string	"Internal server error"
+//	@Security		BearerAuth
+//	@Router			/packtmplpackupld [post]
+func (h *TemplateHandlers) BulkUploadTemplates(w http.ResponseWriter, r *http.Request) {
+	userEmail := r.Header.Get("X-User")
+	if userEmail == "" {
+		http.Error(w, "User not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	err := HandleBulkUploadTemplates(w, r, userEmail, h.templateStorage)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+// DownloadTemplatePackage godoc
+//
+//	@Summary		Download package template
+//	@Description	Download a rendered package template with parameters
+//	@Tags			templates
+//	@Accept			json
+//	@Produce		application/gzip
+//	@Param			templatename	path		string	true	"Template name"	example(webapp-starter)
+//	@Param			parameters		body		object	true	"Template parameters"
+//	@Success		200				{file}		binary	"Template package file"
+//	@Failure		400				{object}	map[string]string	"Bad request"
+//	@Failure		401				{object}	map[string]string	"Unauthorized"
+//	@Failure		404				{object}	map[string]string	"Template not found"
+//	@Failure		500				{object}	map[string]string	"Internal server error"
+//	@Security		BearerAuth
+//	@Router			/packdownload/{templatename} [post]
+func (h *TemplateHandlers) DownloadTemplatePackage(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	templateName := vars["templatename"]
+	userEmail := r.Header.Get("X-User")
+	if userEmail == "" {
+		http.Error(w, "User not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	err := HandleTemplatePackageDownload(w, r, userEmail, templateName, h.config, h.databaseManager, h.redisClient, h.templateStorage)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 // SetupTemplateRoutes sets up all template-related routes on the provided router
 func SetupTemplateRoutes(router *mux.Router, cfg *config.Config, databaseManager *db.DatabaseManager, redisClient *redisclient.Client) {
-	templateStorage := tmplstorage.NewTemplateStorage(redisClient)
+	handlers := NewTemplateHandlers(cfg, databaseManager, redisClient)
 
-	// List package templates
-	router.HandleFunc("/packtmpl", func(w http.ResponseWriter, r *http.Request) {
-		userEmail := r.Header.Get("X-User")
-		if userEmail == "" {
-			http.Error(w, "User not authenticated", http.StatusUnauthorized)
-			return
-		}
-
-		err := HandleListTemplates(w, r, userEmail, templateStorage)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}).Methods("GET")
-
-	// Get specific package template
-	router.HandleFunc("/packtmpl/{templatename}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		templateName := vars["templatename"]
-		userEmail := r.Header.Get("X-User")
-		if userEmail == "" {
-			http.Error(w, "User not authenticated", http.StatusUnauthorized)
-			return
-		}
-
-		err := HandleGetTemplate(w, r, userEmail, templateName, templateStorage)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}).Methods("GET")
-
-	// Create/Update package template
-	router.HandleFunc("/packtmpl/{templatename}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		templateName := vars["templatename"]
-		userEmail := r.Header.Get("X-User")
-		if userEmail == "" {
-			http.Error(w, "User not authenticated", http.StatusUnauthorized)
-			return
-		}
-
-		err := HandleSetTemplate(w, r, userEmail, templateName, templateStorage)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}).Methods("POST")
-
-	// Delete package template
-	router.HandleFunc("/packtmpl/{templatename}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		templateName := vars["templatename"]
-		userEmail := r.Header.Get("X-User")
-		if userEmail == "" {
-			http.Error(w, "User not authenticated", http.StatusUnauthorized)
-			return
-		}
-
-		err := HandleDeleteTemplate(w, r, userEmail, templateName, templateStorage)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}).Methods("DELETE")
-
-	// Bulk upload package templates
-	router.HandleFunc("/packtmplpackupld", func(w http.ResponseWriter, r *http.Request) {
-		userEmail := r.Header.Get("X-User")
-		if userEmail == "" {
-			http.Error(w, "User not authenticated", http.StatusUnauthorized)
-			return
-		}
-
-		err := HandleBulkUploadTemplates(w, r, userEmail, templateStorage)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}).Methods("POST")
-
-	// Package template download with parameters
-	router.HandleFunc("/packdownload/{templatename}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		templateName := vars["templatename"]
-		userEmail := r.Header.Get("X-User")
-		if userEmail == "" {
-			http.Error(w, "User not authenticated", http.StatusUnauthorized)
-			return
-		}
-
-		err := HandleTemplatePackageDownload(w, r, userEmail, templateName, cfg, databaseManager, redisClient, templateStorage)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}).Methods("POST")
+	// Template routes
+	router.HandleFunc("/packtmpl", handlers.GetTemplates).Methods("GET")
+	router.HandleFunc("/packtmpl/{templatename}", handlers.GetTemplate).Methods("GET")
+	router.HandleFunc("/packtmpl/{templatename}", handlers.CreateTemplate).Methods("POST")
+	router.HandleFunc("/packtmpl/{templatename}", handlers.DeleteTemplate).Methods("DELETE")
+	router.HandleFunc("/packtmplpackupld", handlers.BulkUploadTemplates).Methods("POST")
+	router.HandleFunc("/packdownload/{templatename}", handlers.DownloadTemplatePackage).Methods("POST")
 }
 
 /*
