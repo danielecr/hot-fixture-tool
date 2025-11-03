@@ -110,14 +110,31 @@ Content-Type: application/x-json-stream
 - **Unix find performance**: Optimized for millions of files
 - **Early filtering**: Filters applied during traversal, not after
 
-### Pack Download exec Operation (Protected)
-- `POST /packdownload/{packname}` accept yaml payload to create a package.tar.gz with all files described in the yaml, then it returns the file to the caller.
+### Pack templates Operations (Protected)
+- `PUT /packtmpl/{templatename}` accept yaml payload to store a new package template named `templatename` (returns error if already exists)
+- `POST /packtmpl/{templatename}` accept yaml payload to replace a package template definition
+- `DELETE /packtmpl/{templatename}` remove package template `templatename`
+- `GET /packtmpls` returns a list of package templates created by the user
+- `GET /packtmpl/{templatename}` return package template definition for `templatename`
+- `POST /packtmplpackupld` accept a .tar.gz containing .yaml files of package templates. It updates all package template by their name, if package template does not exists, then it create it. It returns a report of changes made as JSON.
+- `PATCH /packtmplpackupld` accept a .tar.gz containing .yaml files of package templates. It checks all package template by their name. It returns a report of planned changes as JSON object: {"pkgtemplate1": "untouched", "pkgtemplate2": "new", "template3": "updated"}.
+- `PATCH /packtmpl/{templatename}` accept yaml payload of existing package template definition. It returns a package template change set in diff unified format (encoded as text/txt)
 
-Package request creation is logged into redis with key schema: <useremail>_pkg_<packname>
+Each user has a list of package template associated. In Redis this list is stored on `pkg_templatelst_{usermail}` as JSON array, and updated on every PUT or DELETE. The real package definition in yaml is stored in Redis key `pkg_template_{usermail}_{templatename}`.
 
-and content the yaml definition.
-Another entry in redis has the key schema: <useremail>_pkg_<packname>_timestamp
-and content {"timestamp": <timestamp>, "size": <pkgsize>}
+### Pack Download exec Operations (Protected)
+- `POST /packdownload/{templatename}` accept a JSON as payload, containing an array of parameters. It produce a `pkg-{template}-timestamp.tar.gz`, and returns the file to the caller.
+
+`pkg-{template}-{timestamp}.tar.gz` contains data in `pkg-{template}-{timestamp}` folder as .sql and files, and a subfolder `pkg-{template}-{timestamp}/METADATA` with files:
+- `input.json` the array of parameters used.
+- `replacement.json` array of object containing replacement calculated in prepare stage.
+- `pkg-template.yaml` the base template used
+- `timestamps.json` info timestamps: package creation, files mtime for each file exported.
+
+Package creation request is logged into redis with key schema `<useremail>_pkg_<templatename>_dwnld` with content a JSON array of timestamps.
+
+Another entry in redis has the key schema:
+`<useremail>_pkg_<templatename>_dwnld_{timestamp}` it contains METADATA as JSON objet made of `{"input": <input-array>, "replacement": <calculated-replacement>, "timestamps": <timestamps>, "pkg-template": <pkg-template.yaml-text>}`
 
 ## Configuration
 

@@ -157,3 +157,17 @@ func (c *Client) Get(ctx context.Context, key string) (string, error) {
 	}
 	return result, nil
 }
+
+// Del deletes one or more keys from Redis
+func (c *Client) Del(ctx context.Context, keys ...string) error {
+	return c.rdb.Del(ctx, keys...).Err()
+}
+
+// Exists checks if a key exists in Redis
+func (c *Client) Exists(ctx context.Context, key string) (bool, error) {
+	count, err := c.rdb.Exists(ctx, key).Result()
+	if err != nil {
+		return false, fmt.Errorf("failed to check key existence %s: %v", key, err)
+	}
+	return count > 0, nil
+}

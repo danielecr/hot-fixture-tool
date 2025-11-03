@@ -157,7 +157,8 @@ The command export-package accepts a .yaml file as a template definition for exp
 ```yaml
 hfitVersion: 1
 templateName: usecase_data
-ame: basedata_$1
+projectName: project_name # typically the repository or project name
+packageName: basedata_$1
 prepare:
   - setVar: dataid
     from: input

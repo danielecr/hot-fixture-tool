@@ -30,8 +30,9 @@ import (
 	"hfitd/auth"
 	"hfitd/config"
 	"hfitd/db"
-	"hfitd/packdownload"
+	"hfitd/pkgtmpl"
 	redisclient "hfitd/redis"
+	"hfitd/tmplstorage"
 
 	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v2"
@@ -322,18 +323,101 @@ func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminSe
 		w.WriteHeader(http.StatusOK)
 	}).Methods("HEAD")
 
-	// Package download route
-	protected.HandleFunc("/packdownload/{packname}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		packname := vars["packname"]
+	// Package template routes
+	templateStorage := tmplstorage.NewTemplateStorage(redisClient)
 
-		// Get user email from JWT token (extract username from X-User header set by middleware)
+	// List package templates
+	protected.HandleFunc("/packtmpl", func(w http.ResponseWriter, r *http.Request) {
 		userEmail := r.Header.Get("X-User")
 		if userEmail == "" {
-			userEmail = "unknown@example.com" // Fallback if header not set
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
 		}
 
-		err := handlePackageDownloadNew(w, r, packname, userEmail, cfg, databaseManager, redisClient)
+		err := handleListTemplates(w, r, userEmail, templateStorage)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}).Methods("GET")
+
+	// Get specific package template
+	protected.HandleFunc("/packtmpl/{templatename}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		templateName := vars["templatename"]
+		userEmail := r.Header.Get("X-User")
+		if userEmail == "" {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+
+		err := handleGetTemplate(w, r, userEmail, templateName, templateStorage)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}).Methods("GET")
+
+	// Create/Update package template
+	protected.HandleFunc("/packtmpl/{templatename}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		templateName := vars["templatename"]
+		userEmail := r.Header.Get("X-User")
+		if userEmail == "" {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+
+		err := handleSetTemplate(w, r, userEmail, templateName, templateStorage)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}).Methods("POST")
+
+	// Delete package template
+	protected.HandleFunc("/packtmpl/{templatename}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		templateName := vars["templatename"]
+		userEmail := r.Header.Get("X-User")
+		if userEmail == "" {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+
+		err := handleDeleteTemplate(w, r, userEmail, templateName, templateStorage)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}).Methods("DELETE")
+
+	// Bulk upload package templates
+	protected.HandleFunc("/packtmplpackupld", func(w http.ResponseWriter, r *http.Request) {
+		userEmail := r.Header.Get("X-User")
+		if userEmail == "" {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+
+		err := handleBulkUploadTemplates(w, r, userEmail, templateStorage)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}).Methods("POST")
+
+	// Package template download with parameters
+	protected.HandleFunc("/packdownload/{templatename}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		templateName := vars["templatename"]
+		userEmail := r.Header.Get("X-User")
+		if userEmail == "" {
+			http.Error(w, "User not authenticated", http.StatusUnauthorized)
+			return
+		}
+
+		err := handleTemplatePackageDownload(w, r, userEmail, templateName, cfg, databaseManager, redisClient, templateStorage)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -806,167 +890,6 @@ func checkFileExists(volumePath string, filePath string) (bool, error) {
 	return true, nil
 }
 
-// PackageDefinition represents the YAML package structure
-type PackageDefinition struct {
-	Name    string                      `yaml:"name"`
-	Exports map[string]ExportDefinition `yaml:"exports"`
-}
-
-type ExportDefinition struct {
-	Type string                 `yaml:"type"`
-	Data map[string]interface{} `yaml:"data"`
-}
-
-/*
-* handlePackageDownload processes package download requests with YAML definition.
- */
-func handlePackageDownload(w http.ResponseWriter, r *http.Request, packname string, cfg *config.Config, databaseManager *db.DatabaseManager) error {
-	var packageDef PackageDefinition
-
-	decoder := yaml.NewDecoder(r.Body)
-	if err := decoder.Decode(&packageDef); err != nil {
-		return fmt.Errorf("failed to parse YAML: %w", err)
-	}
-
-	// Create temporary directory for package assembly
-	tmpDir, err := os.MkdirTemp("", "hfit-package-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Process each export in the package
-	for filename, export := range packageDef.Exports {
-		exportPath := filepath.Join(tmpDir, filename)
-
-		switch export.Type {
-		case "dbcreate":
-			err = handleDBCreateExport(exportPath, export.Data, databaseManager)
-		case "table-create":
-			err = handleTableCreateExport(exportPath, export.Data, databaseManager)
-		case "table-data":
-			err = handleTableDataExport(exportPath, export.Data, databaseManager)
-		case "file":
-			err = handleFileExport(exportPath, export.Data, cfg)
-		default:
-			err = fmt.Errorf("unsupported export type: %s", export.Type)
-		}
-
-		if err != nil {
-			return fmt.Errorf("failed to process export %s: %w", filename, err)
-		}
-	}
-
-	// Create tar.gz archive
-	w.Header().Set("Content-Type", "application/gzip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar.gz", packname))
-
-	gzipWriter := gzip.NewWriter(w)
-	defer gzipWriter.Close()
-
-	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
-
-	// Add files to archive
-	return filepath.Walk(tmpDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return err
-		}
-
-		relPath, err := filepath.Rel(tmpDir, path)
-		if err != nil {
-			return err
-		}
-
-		header := &tar.Header{
-			Name:    relPath,
-			Size:    info.Size(),
-			Mode:    int64(info.Mode()),
-			ModTime: info.ModTime(),
-		}
-
-		if err := tarWriter.WriteHeader(header); err != nil {
-			return err
-		}
-
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		_, err = io.Copy(tarWriter, file)
-		return err
-	})
-}
-
-/*
-* handleDBCreateExport creates database creation SQL.
- */
-func handleDBCreateExport(exportPath string, data map[string]interface{}, databaseManager *db.DatabaseManager) error {
-	// Implementation for database creation export
-	// use https://pkg.go.dev/github.com/aliakseiz/go-mysqldump for mysqldump
-	// to export the database creation SQL
-	return os.WriteFile(exportPath, []byte("-- Database creation SQL placeholder\n"), 0644)
-}
-
-/*
-* handleTableCreateExport creates table creation SQL.
- */
-func handleTableCreateExport(exportPath string, data map[string]interface{}, databaseManager *db.DatabaseManager) error {
-	// Implementation for table creation export
-	// use https://pkg.go.dev/github.com/aliakseiz/go-mysqldump for mysqldump
-	// to export the table creation SQL
-	return os.WriteFile(exportPath, []byte("-- Table creation SQL placeholder\n"), 0644)
-}
-
-/*
-* handleTableDataExport creates table data SQL.
- */
-func handleTableDataExport(exportPath string, data map[string]interface{}, databaseManager *db.DatabaseManager) error {
-	// Implementation for table data export
-	// use https://pkg.go.dev/github.com/aliakseiz/go-mysqldump for mysqldump
-	// to export the table data SQL
-	return os.WriteFile(exportPath, []byte("-- Table data SQL placeholder\n"), 0644)
-}
-
-/*
-* handleFileExport copies files from volumes.
- */
-func handleFileExport(exportPath string, data map[string]interface{}, cfg *config.Config) error {
-	volume, ok := data["volume"].(string)
-	if !ok {
-		return fmt.Errorf("volume not specified")
-	}
-
-	path, ok := data["path"].(string)
-	if !ok {
-		return fmt.Errorf("path not specified")
-	}
-
-	volumeConfig, exists := cfg.Volumes[volume]
-	if !exists {
-		return fmt.Errorf("volume %s not found", volume)
-	}
-
-	sourcePath := filepath.Join(volumeConfig.Path, path)
-
-	sourceFile, err := os.Open(sourcePath)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(exportPath)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	_, err = io.Copy(destFile, sourceFile)
-	return err
-}
-
 /*
 * getTables retrieves the list of tables for a specific database.
  */
@@ -1208,45 +1131,241 @@ func streamTableRows(w http.ResponseWriter, conn *sql.DB, dbms string, dbid stri
 }
 
 /*
-* handlePackageDownloadNew processes package download requests using the new packdownload module.
-* This includes Redis storage as specified in the requirements.
+* Template handler functions for package template operations
  */
-func handlePackageDownloadNew(w http.ResponseWriter, r *http.Request, packname, userEmail string, cfg *config.Config, databaseManager *db.DatabaseManager, redisClient *redisclient.Client) error {
-	// Read YAML from request body
-	yamlData, err := io.ReadAll(r.Body)
+func handleListTemplates(w http.ResponseWriter, r *http.Request, userEmail string, templateStorage *tmplstorage.TemplateStorage) error {
+	templates, err := templateStorage.ListTemplates(r.Context(), userEmail)
+	if err != nil {
+		return fmt.Errorf("failed to list templates: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(templates)
+}
+
+// handleGetTemplate retrieves a specific package template
+func handleGetTemplate(w http.ResponseWriter, r *http.Request, userEmail, templateName string, templateStorage *tmplstorage.TemplateStorage) error {
+	yamlContent, err := templateStorage.GetTemplate(r.Context(), userEmail, templateName)
+	if err != nil {
+		return fmt.Errorf("failed to get template: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Write([]byte(yamlContent))
+	return nil
+}
+
+// handleSetTemplate creates or updates a package template
+func handleSetTemplate(w http.ResponseWriter, r *http.Request, userEmail, templateName string, templateStorage *tmplstorage.TemplateStorage) error {
+	// Read YAML content from request body
+	yamlContent, err := io.ReadAll(r.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read request body: %v", err)
 	}
 
-	// Create package processor
-	processor := packdownload.NewPackageProcessor(cfg, databaseManager, redisClient)
-
-	// Process package and get tar.gz file path
-	tarPath, err := processor.ProcessPackage(userEmail, packname, yamlData)
-	if err != nil {
-		return fmt.Errorf("failed to process package: %v", err)
+	// Validate YAML by attempting to parse it
+	var template pkgtmpl.PackageTemplate
+	if err := yaml.Unmarshal(yamlContent, &template); err != nil {
+		return fmt.Errorf("invalid YAML content: %v", err)
 	}
-	defer os.Remove(tarPath) // Clean up temporary file
 
-	// Open the tar.gz file
-	tarFile, err := os.Open(tarPath)
+	// Store the template
+	if err := templateStorage.StoreTemplate(r.Context(), userEmail, templateName, string(yamlContent)); err != nil {
+		return fmt.Errorf("failed to store template: %v", err)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Template stored successfully"))
+	return nil
+}
+
+// handleDeleteTemplate deletes a package template
+func handleDeleteTemplate(w http.ResponseWriter, r *http.Request, userEmail, templateName string, templateStorage *tmplstorage.TemplateStorage) error {
+	// Check if template exists
+	exists, err := templateStorage.TemplateExists(r.Context(), userEmail, templateName)
+	if err != nil {
+		return fmt.Errorf("failed to check template existence: %v", err)
+	}
+
+	if !exists {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("Template not found"))
+		return nil
+	}
+
+	// Delete the template
+	if err := templateStorage.DeleteTemplate(r.Context(), userEmail, templateName); err != nil {
+		return fmt.Errorf("failed to delete template: %v", err)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Template deleted successfully"))
+	return nil
+}
+
+// handleBulkUploadTemplates handles bulk upload of package templates from tar.gz
+func handleBulkUploadTemplates(w http.ResponseWriter, r *http.Request, userEmail string, templateStorage *tmplstorage.TemplateStorage) error {
+	// Parse multipart form
+	err := r.ParseMultipartForm(32 << 20) // 32MB max memory
+	if err != nil {
+		return fmt.Errorf("failed to parse multipart form: %v", err)
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		return fmt.Errorf("failed to get uploaded file: %v", err)
+	}
+	defer file.Close()
+
+	// Create gzip reader
+	gzipReader, err := gzip.NewReader(file)
+	if err != nil {
+		return fmt.Errorf("failed to create gzip reader: %v", err)
+	}
+	defer gzipReader.Close()
+
+	// Create tar reader
+	tarReader := tar.NewReader(gzipReader)
+
+	var report []map[string]interface{}
+
+	// Process each file in the archive
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar header: %v", err)
+		}
+
+		// Skip directories and non-yaml files
+		if header.Typeflag != tar.TypeReg || !strings.HasSuffix(header.Name, ".yaml") {
+			continue
+		}
+
+		// Extract template name from filename
+		templateName := strings.TrimSuffix(filepath.Base(header.Name), ".yaml")
+
+		// Read file content
+		content, err := io.ReadAll(tarReader)
+		if err != nil {
+			return fmt.Errorf("failed to read file %s: %v", header.Name, err)
+		}
+
+		// Validate YAML
+		var template pkgtmpl.PackageTemplate
+		if err := yaml.Unmarshal(content, &template); err != nil {
+			report = append(report, map[string]interface{}{
+				"template": templateName,
+				"status":   "error",
+				"message":  fmt.Sprintf("Invalid YAML: %v", err),
+			})
+			continue
+		}
+
+		// Check if template exists
+		exists, err := templateStorage.TemplateExists(r.Context(), userEmail, templateName)
+		if err != nil {
+			report = append(report, map[string]interface{}{
+				"template": templateName,
+				"status":   "error",
+				"message":  fmt.Sprintf("Failed to check existence: %v", err),
+			})
+			continue
+		}
+
+		// Store the template
+		if err := templateStorage.StoreTemplate(r.Context(), userEmail, templateName, string(content)); err != nil {
+			report = append(report, map[string]interface{}{
+				"template": templateName,
+				"status":   "error",
+				"message":  fmt.Sprintf("Failed to store: %v", err),
+			})
+			continue
+		}
+
+		action := "created"
+		if exists {
+			action = "updated"
+		}
+
+		report = append(report, map[string]interface{}{
+			"template": templateName,
+			"status":   "success",
+			"action":   action,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(map[string]interface{}{
+		"templates_processed": len(report),
+		"report":              report,
+	})
+}
+
+// handleTemplatePackageDownload processes template-based package downloads with parameters
+func handleTemplatePackageDownload(w http.ResponseWriter, r *http.Request, userEmail, templateName string, cfg *config.Config, databaseManager *db.DatabaseManager, redisClient *redisclient.Client, templateStorage *tmplstorage.TemplateStorage) error {
+	// Parse JSON parameters from request body
+	var params []string
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		return fmt.Errorf("failed to parse parameters: %v", err)
+	}
+
+	// Get the template
+	yamlContent, err := templateStorage.GetTemplate(r.Context(), userEmail, templateName)
+	if err != nil {
+		return fmt.Errorf("template not found: %v", err)
+	}
+
+	// Parse the template
+	var template pkgtmpl.PackageTemplate
+	if err := yaml.Unmarshal([]byte(yamlContent), &template); err != nil {
+		return fmt.Errorf("failed to parse template: %v", err)
+	}
+
+	// Create package template processor
+	processor := pkgtmpl.NewPackageTemplateProcessor(cfg, databaseManager)
+
+	// Process the template with parameters
+	timestamp := time.Now().Unix()
+	packagePath, metadata, err := processor.ProcessTemplate(r.Context(), &template, params, userEmail, templateName, timestamp)
+	if err != nil {
+		return fmt.Errorf("failed to process template: %v", err)
+	}
+
+	// Log the download
+	if err := templateStorage.LogDownload(r.Context(), userEmail, templateName, timestamp); err != nil {
+		// Log error but don't fail the request
+		fmt.Printf("Warning: failed to log download: %v\n", err)
+	}
+
+	// Store download metadata
+	if err := templateStorage.StoreDownloadMetadata(r.Context(), userEmail, templateName, timestamp, *metadata); err != nil {
+		// Log error but don't fail the request
+		fmt.Printf("Warning: failed to store download metadata: %v\n", err)
+	}
+
+	// Open the generated package file
+	packageFile, err := os.Open(packagePath)
 	if err != nil {
 		return fmt.Errorf("failed to open package file: %v", err)
 	}
-	defer tarFile.Close()
+	defer packageFile.Close()
 
 	// Get file info for Content-Length header
-	fileInfo, err := tarFile.Stat()
+	fileInfo, err := packageFile.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %v", err)
 	}
 
 	// Set response headers
+	filename := fmt.Sprintf("pkg-%s-%d.tar.gz", templateName, timestamp)
 	w.Header().Set("Content-Type", "application/gzip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar.gz", packname))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
 
 	// Stream the file to the client
-	_, err = io.Copy(w, tarFile)
+	_, err = io.Copy(w, packageFile)
 	return err
 }

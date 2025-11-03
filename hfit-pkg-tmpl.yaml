@@ -1,7 +1,8 @@
 ## Example of hfit package template YAML file
 hfitVersion: 1
 templateName: usecase_data
-name: basedata_$1
+projectName: project_name # typically the repository or project name
+packageName: basedata_$1
 prepare:
   - setVar: dataid
     from: input
@@ -45,6 +46,12 @@ exports:
       dbms: dbms_mysql1
       table: dbname1.table1
       filter: WHERE key<34 AND key>12
+  tabledata2.data.sql:
+    type: table-data
+    data:
+      dbms: dbms_mysql1
+      table: dbname1.usertable
+      filter: WHERE usrId=${usrId}
   target-filename.txt:
     type: file
     data:
