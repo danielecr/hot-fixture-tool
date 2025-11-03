@@ -460,17 +460,13 @@ func (c *Client) DeleteTemplate(templateName string) error {
 
 // GenerateAndDownloadPackage generates a package from a template with parameters
 func (c *Client) GenerateAndDownloadPackage(templateName string, params []string) error {
-	// Create the request payload with template parameters
-	payload := map[string]interface{}{
-		"parameters": params,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
+	// Send parameters as a JSON array directly
+	payloadBytes, err := json.Marshal(params)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request payload: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.BaseURL+"/pkg/"+templateName, strings.NewReader(string(payloadBytes)))
+	req, err := http.NewRequest("POST", c.BaseURL+"/packdownload/"+templateName, strings.NewReader(string(payloadBytes)))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
