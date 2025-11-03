@@ -45,6 +45,10 @@ Example of folder content:
 ~~~
 └── hfit-data
     ├── .gitignore
+    ├── METADATA
+    │   ├── package.json
+    │   ├── replacements.json
+    │   └── timestamps.json
     ├── base-export
     │   ├── db1.table1.create.sql
     │   ├── db1.table2.create.sql
