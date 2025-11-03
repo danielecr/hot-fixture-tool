@@ -111,7 +111,7 @@ func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminSe
 
 	// Swagger documentation (unprotected)
 	router.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)
-	
+
 	// Standard swagger.json alias for convenience
 	router.HandleFunc("/swagger.json", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/swagger/doc.json", http.StatusMovedPermanently)
