@@ -86,6 +86,8 @@ func printUsage() {
 	fmt.Println("Examples:")
 	fmt.Println("  hfitd-cli adduser alice@example.com alice_public_key.pem")
 	fmt.Println("  hfitd-cli adduser bob@company.com \"-----BEGIN PUBLIC KEY-----...\"")
+	fmt.Println("  hfitd-cli adduser user@domain.com \"ssh-rsa AAAAB3NzaC1yc2EAAAA...\"")
+	fmt.Println("  hfitd-cli adduser dev@team.com \"ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNo...\"")
 	fmt.Println()
 	fmt.Println("For support, contact: Daniele Cruciani <daniele@smartango.com>")
 	fmt.Println("Project repository: https://github.com/danielecr/hot-fixture-tool")
@@ -147,25 +149,33 @@ func handleGetJWTPublicKey(socketPath string) {
 }
 
 func getPublicKey(arg string) string {
-	// Check if it's a file path
-	if !strings.Contains(arg, "BEGIN PUBLIC KEY") {
-		// Treat as file path
-		if !filepath.IsAbs(arg) {
-			// Make relative to current directory
-			wd, _ := os.Getwd()
-			arg = filepath.Join(wd, arg)
-		}
-
-		content, err := ioutil.ReadFile(arg)
-		if err != nil {
-			fmt.Printf("✗ Failed to read public key file: %v\n", err)
-			os.Exit(1)
-		}
-		return string(content)
+	// Check if it's a PEM format key (starts with -----BEGIN)
+	if strings.Contains(arg, "BEGIN PUBLIC KEY") {
+		return arg
 	}
 
-	// Treat as direct public key content
-	return arg
+	// Check if it's an OpenSSH format key (starts with algorithm name)
+	if strings.HasPrefix(arg, "ssh-rsa ") ||
+		strings.HasPrefix(arg, "ssh-ed25519 ") ||
+		strings.HasPrefix(arg, "ecdsa-sha2-nistp256 ") ||
+		strings.HasPrefix(arg, "ecdsa-sha2-nistp384 ") ||
+		strings.HasPrefix(arg, "ecdsa-sha2-nistp521 ") {
+		return arg
+	}
+
+	// Otherwise, treat as file path
+	if !filepath.IsAbs(arg) {
+		// Make relative to current directory
+		wd, _ := os.Getwd()
+		arg = filepath.Join(wd, arg)
+	}
+
+	content, err := ioutil.ReadFile(arg)
+	if err != nil {
+		fmt.Printf("✗ Failed to read public key file: %v\n", err)
+		os.Exit(1)
+	}
+	return strings.TrimSpace(string(content))
 }
 
 func sendCommand(socketPath string, cmd AdminCommand) AdminResponse {

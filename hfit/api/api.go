@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -358,4 +359,170 @@ func (c *Client) DownloadPackage(packname string, yamlData []byte) (io.ReadClose
 	}
 
 	return resp.Body, nil
+}
+
+// ListTemplates lists all package templates for the authenticated user
+func (c *Client) ListTemplates() ([]string, error) {
+	resp, err := c.makeRequest("GET", "/packtmpl")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var templates []string
+	if err := json.NewDecoder(resp.Body).Decode(&templates); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return templates, nil
+}
+
+// GetTemplate retrieves a specific template's YAML content
+func (c *Client) GetTemplate(templateName string) (string, error) {
+	resp, err := c.makeRequest("GET", "/packtmpl/"+templateName)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return string(content), nil
+}
+
+// CreateTemplate creates a new template from YAML content
+func (c *Client) CreateTemplate(yamlContent []byte) error {
+	return c.sendTemplateRequest("POST", "/packtmpl", yamlContent)
+}
+
+// UpdateTemplate updates an existing template with YAML content
+func (c *Client) UpdateTemplate(yamlContent []byte) error {
+	return c.sendTemplateRequest("PUT", "/packtmpl", yamlContent)
+}
+
+// PatchTemplate partially updates a template and returns diff output
+func (c *Client) PatchTemplate(yamlContent []byte) (string, error) {
+	req, err := http.NewRequest("PATCH", c.BaseURL+"/packtmpl", strings.NewReader(string(yamlContent)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Content-Type", "application/x-yaml")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	diffOutput, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return string(diffOutput), nil
+}
+
+// DeleteTemplate deletes a specific template
+func (c *Client) DeleteTemplate(templateName string) error {
+	resp, err := c.makeRequest("DELETE", "/packtmpl/"+templateName)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// GenerateAndDownloadPackage generates a package from a template with parameters
+func (c *Client) GenerateAndDownloadPackage(templateName string, params []string) error {
+	// Send parameters as a JSON array directly
+	payloadBytes, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.BaseURL+"/packdownload/"+templateName, strings.NewReader(string(payloadBytes)))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// The response should be a downloadable package
+	// For now, just save it to a file based on the template name
+	packageFile := fmt.Sprintf("%s_package.tar.gz", templateName)
+	file, err := os.Create(packageFile)
+	if err != nil {
+		return fmt.Errorf("failed to create package file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to write package file: %w", err)
+	}
+
+	fmt.Printf("Package saved to: %s\n", packageFile)
+	return nil
+}
+
+// sendTemplateRequest is a helper function for sending template requests
+func (c *Client) sendTemplateRequest(method, endpoint string, yamlContent []byte) error {
+	req, err := http.NewRequest(method, c.BaseURL+endpoint, strings.NewReader(string(yamlContent)))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Content-Type", "application/x-yaml")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
 }

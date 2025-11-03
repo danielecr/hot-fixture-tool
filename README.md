@@ -45,6 +45,10 @@ Example of folder content:
 ~~~
 └── hfit-data
     ├── .gitignore
+    ├── METADATA
+    │   ├── package.json
+    │   ├── replacements.json
+    │   └── timestamps.json
     ├── base-export
     │   ├── db1.table1.create.sql
     │   ├── db1.table2.create.sql
@@ -152,11 +156,33 @@ Features:
 
 ## Export package format (WIP)
 
-The command export-package accepts a .yaml file with definition for hot data exports. The format is:
+The command export-package accepts a .yaml file as a template definition for exporting hot data. The format is:
 
 ```yaml
 hfitVersion: 1
-name: basedata
+templateName: usecase_data
+projectName: project_name # typically the repository or project name
+packageName: basedata_$1
+prepare:
+  - setVar: dataid
+    from: input
+    source: $1
+  - setVar: usrId
+    from: hot-data
+    hdata:
+        type: dbquery
+        dbms: dbms_mysql1
+        query: "SELECT usrId FROM dbname.datatable WHERE dataid=${dataid} ORDER BY utime LIMIT 1"
+  - setVar: fBaseName
+    from: hot-data
+    hdata:
+        type: volume
+        volume: vol1
+        glob: "*_{dataid}_{usrId}_*.txt"
+        # take the first in mtime desc order:
+        sort: "mtime|desc"
+        # extract the first number of filename as fBaseName value
+        regex_replace: "/([0-9]+).*/$1/"
 exports:
   dbcreate.sql:
     type: dbcreate
@@ -189,6 +215,13 @@ exports:
 
 NOTES:
 - order of retrievement is not important
+- order of prepare is relevant
+
+Once you defined this file, the common usage is to to store it in hfit-data/ folder of the repo. For this reason:
+
+> hfit repo-prepare
+
+Does create an hfit-data/ folder on the root of your git repo and write there some package template example.
 
 hfit CLI should be used to create and populate this .yaml file.
 

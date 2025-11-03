@@ -14,11 +14,15 @@ package auth
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"strings"
@@ -27,6 +31,7 @@ import (
 	redisclient "hfitd/redis"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/ssh"
 )
 
 type AuthManager struct {
@@ -67,7 +72,18 @@ func NewAuthManager(jwtSecret []byte, redisClient *redisclient.Client) (*AuthMan
 	}, nil
 }
 
-// GenerateChallenge creates a random challenge for the client to sign
+// GenerateChallenge godoc
+//
+//	@Summary		Generate authentication challenge
+//	@Description	Generate a random challenge for public key authentication
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request		body		ChallengeRequest	true	"Challenge request with username"
+//	@Success		200			{object}	ChallengeResponse	"Challenge generated successfully"
+//	@Failure		400			{object}	map[string]string	"Bad request"
+//	@Failure		500			{object}	map[string]string	"Internal server error"
+//	@Router			/auth/challenge [post]
 func (am *AuthManager) GenerateChallenge(w http.ResponseWriter, r *http.Request) {
 	var req ChallengeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -99,7 +115,19 @@ func (am *AuthManager) GenerateChallenge(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(response)
 }
 
-// Authenticate verifies the signed challenge and issues a JWT token
+// Authenticate godoc
+//
+//	@Summary		Authenticate with signed challenge
+//	@Description	Verify the signed challenge and issue a JWT token
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			request		body		AuthRequest		true	"Authentication request with signed challenge"
+//	@Success		200			{object}	AuthResponse	"Authentication successful, JWT token issued"
+//	@Failure		400			{object}	map[string]string	"Bad request"
+//	@Failure		401			{object}	map[string]string	"Unauthorized - invalid signature"
+//	@Failure		500			{object}	map[string]string	"Internal server error"
+//	@Router			/auth/authenticate [post]
 func (am *AuthManager) Authenticate(w http.ResponseWriter, r *http.Request) {
 	var req AuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -125,17 +153,16 @@ func (am *AuthManager) Authenticate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user's public key from Redis
+	// Get user's public key string from Redis
 	ctx := context.Background()
-	userPublicKey, err := am.redisClient.GetUserPublicKey(ctx, req.Username)
+	publicKeyStr, err := am.redisClient.GetUserPublicKeyString(ctx, req.Username)
 	if err != nil {
 		http.Error(w, "User not found or invalid", http.StatusUnauthorized)
 		return
 	}
 
-	// Verify the signature
-	hashed := sha256.Sum256(challengeBytes)
-	if err := rsa.VerifyPKCS1v15(userPublicKey, crypto.SHA256, hashed[:], signatureBytes); err != nil {
+	// Parse and verify the signature based on key format
+	if err := verifySignature(publicKeyStr, challengeBytes, signatureBytes); err != nil {
 		http.Error(w, "Invalid signature", http.StatusUnauthorized)
 		return
 	}
@@ -213,4 +240,109 @@ func (am *AuthManager) JWTMiddleware(next http.Handler) http.Handler {
 			return
 		}
 	})
+}
+
+// verifySignature verifies the signature against a public key in multiple formats
+func verifySignature(publicKeyStr string, message, signature []byte) error {
+	publicKeyStr = strings.TrimSpace(publicKeyStr)
+
+	// Check if it's PEM format
+	if strings.Contains(publicKeyStr, "-----BEGIN") {
+		return verifyPEMSignature(publicKeyStr, message, signature)
+	}
+
+	// Check if it's OpenSSH format
+	parts := strings.Fields(publicKeyStr)
+	if len(parts) >= 2 {
+		algorithm := parts[0]
+		switch algorithm {
+		case "ssh-rsa":
+			return verifyOpenSSHRSASignature(publicKeyStr, message, signature)
+		case "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521":
+			return verifyOpenSSHECDSASignature(publicKeyStr, message, signature)
+		case "ssh-ed25519":
+			return verifyOpenSSHEd25519Signature(publicKeyStr, message, signature)
+		}
+	}
+
+	return fmt.Errorf("unsupported public key format")
+}
+
+// verifyPEMSignature verifies signature for PEM format keys
+func verifyPEMSignature(publicKeyPEM string, message, signature []byte) error {
+	block, _ := pem.Decode([]byte(publicKeyPEM))
+	if block == nil {
+		return fmt.Errorf("failed to decode PEM block")
+	}
+
+	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse public key: %v", err)
+	}
+
+	hashed := sha256.Sum256(message)
+
+	switch key := publicKey.(type) {
+	case *rsa.PublicKey:
+		return rsa.VerifyPKCS1v15(key, crypto.SHA256, hashed[:], signature)
+	case *ecdsa.PublicKey:
+		return verifyECDSASignature(key, hashed[:], signature)
+	default:
+		return fmt.Errorf("unsupported key type in PEM: %T", publicKey)
+	}
+}
+
+// verifyECDSASignature verifies ECDSA signature
+func verifyECDSASignature(publicKey *ecdsa.PublicKey, hash, signature []byte) error {
+	if !ecdsa.VerifyASN1(publicKey, hash, signature) {
+		return fmt.Errorf("ECDSA signature verification failed")
+	}
+	return nil
+}
+
+// Placeholder functions for OpenSSH format verification
+// These would need full implementation with SSH key parsing
+func verifyOpenSSHRSASignature(publicKeyStr string, message, signature []byte) error {
+	// For now, return an error indicating this needs implementation
+	return fmt.Errorf("OpenSSH RSA signature verification not yet implemented")
+}
+
+func verifyOpenSSHECDSASignature(publicKeyStr string, message, signature []byte) error {
+	// Parse OpenSSH format: algorithm encoded_key [comment]
+	parts := strings.Fields(publicKeyStr)
+	if len(parts) < 2 {
+		return fmt.Errorf("invalid OpenSSH key format")
+	}
+
+	encodedKey := parts[1]
+
+	// Decode the base64 encoded key
+	keyBytes, err := base64.StdEncoding.DecodeString(encodedKey)
+	if err != nil {
+		return fmt.Errorf("failed to decode OpenSSH public key: %w", err)
+	}
+
+	// Parse the SSH public key
+	publicKey, err := ssh.ParsePublicKey(keyBytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse SSH public key: %w", err)
+	}
+
+	// Extract the crypto public key using CryptoPublicKey interface
+	if cryptoKey, ok := publicKey.(ssh.CryptoPublicKey); ok {
+		if ecdsaPubKey, ok := cryptoKey.CryptoPublicKey().(*ecdsa.PublicKey); ok {
+			// Hash the message and verify signature
+			hashed := sha256.Sum256(message)
+			return verifyECDSASignature(ecdsaPubKey, hashed[:], signature)
+		}
+	}
+
+	return fmt.Errorf("failed to extract ECDSA public key from OpenSSH format")
+}
+
+func verifyOpenSSHEd25519Signature(publicKeyStr string, message, signature []byte) error {
+	// For now, return an error indicating this needs implementation
+	// This would use ed25519.Verify when fully implemented
+	_ = ed25519.PublicKey(nil) // Reference to avoid import error
+	return fmt.Errorf("OpenSSH Ed25519 signature verification not yet implemented")
 }
