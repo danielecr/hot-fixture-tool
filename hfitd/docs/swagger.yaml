@@ -619,6 +619,152 @@ paths:
       summary: List package templates
       tags:
       - templates
+    patch:
+      consumes:
+      - application/x-yaml
+      description: Partially update an existing package template and show diff between
+        old and new versions
+      parameters:
+      - description: Partial template YAML content
+        in: body
+        name: template
+        required: true
+        schema:
+          type: string
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: Unified diff output showing changes
+          schema:
+            type: string
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Template not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Partially update package template with diff output
+      tags:
+      - templates
+    post:
+      consumes:
+      - application/x-yaml
+      description: Create a new package template (templateName from YAML content)
+      parameters:
+      - description: Template YAML content
+        in: body
+        name: template
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Template created successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Template already exists
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create package template
+      tags:
+      - templates
+    put:
+      consumes:
+      - application/x-yaml
+      description: Update an existing package template (templateName from YAML content)
+      parameters:
+      - description: Template YAML content
+        in: body
+        name: template
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Template updated successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Template not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update package template
+      tags:
+      - templates
   /packtmpl/{templatename}:
     delete:
       consumes:
@@ -702,55 +848,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Get package template
-      tags:
-      - templates
-    post:
-      consumes:
-      - application/json
-      description: Create or update a package template
-      parameters:
-      - description: Template name
-        example: webapp-starter
-        in: path
-        name: templatename
-        required: true
-        type: string
-      - description: Template data
-        in: body
-        name: template
-        required: true
-        schema:
-          type: object
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Success message
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal server error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Create/Update package template
       tags:
       - templates
   /packtmplpackupld:

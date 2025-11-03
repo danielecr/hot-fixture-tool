@@ -111,14 +111,14 @@ Content-Type: application/x-json-stream
 - **Early filtering**: Filters applied during traversal, not after
 
 ### Pack templates Operations (Protected)
-- `PUT /packtmpl/{templatename}` accept yaml payload to store a new package template named `templatename` (returns error if already exists)
-- `POST /packtmpl/{templatename}` accept yaml payload to replace a package template definition
+- `PUT /packtmpl` accept yaml payload to store a new package template named `templatename` (returns error if already exists)
+- `POST /packtmpl` accept yaml payload to replace a package template definition
 - `DELETE /packtmpl/{templatename}` remove package template `templatename`
 - `GET /packtmpls` returns a list of package templates created by the user
 - `GET /packtmpl/{templatename}` return package template definition for `templatename`
 - `POST /packtmplpackupld` accept a .tar.gz containing .yaml files of package templates. It updates all package template by their name, if package template does not exists, then it create it. It returns a report of changes made as JSON.
 - `PATCH /packtmplpackupld` accept a .tar.gz containing .yaml files of package templates. It checks all package template by their name. It returns a report of planned changes as JSON object: {"pkgtemplate1": "untouched", "pkgtemplate2": "new", "template3": "updated"}.
-- `PATCH /packtmpl/{templatename}` accept yaml payload of existing package template definition. It returns a package template change set in diff unified format (encoded as text/txt)
+- `PATCH /packtmpl` accept yaml payload of existing package template definition. It returns a package template change set in diff unified format (encoded as text/txt)
 
 Each user has a list of package template associated. In Redis this list is stored on `pkg_templatelst_{usermail}` as JSON array, and updated on every PUT or DELETE. The real package definition in yaml is stored in Redis key `pkg_template_{usermail}_{templatename}`.
 
