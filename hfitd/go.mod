@@ -1,6 +1,8 @@
 module hfitd
 
-go 1.23.5
+go 1.24.0
+
+toolchain go1.24.9
 
 require (
 	github.com/aliakseiz/go-mysqldump v1.3.0
@@ -27,7 +29,8 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/swaggo/files v0.0.0-20220610200504-28940afbdbfe // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/crypto v0.43.0 // indirect
+	golang.org/x/net v0.45.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 )

@@ -31,6 +31,7 @@ import (
 	redisclient "hfitd/redis"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/ssh"
 )
 
 type AuthManager struct {
@@ -307,8 +308,36 @@ func verifyOpenSSHRSASignature(publicKeyStr string, message, signature []byte) e
 }
 
 func verifyOpenSSHECDSASignature(publicKeyStr string, message, signature []byte) error {
-	// For now, return an error indicating this needs implementation
-	return fmt.Errorf("OpenSSH ECDSA signature verification not yet implemented")
+	// Parse OpenSSH format: algorithm encoded_key [comment]
+	parts := strings.Fields(publicKeyStr)
+	if len(parts) < 2 {
+		return fmt.Errorf("invalid OpenSSH key format")
+	}
+
+	encodedKey := parts[1]
+
+	// Decode the base64 encoded key
+	keyBytes, err := base64.StdEncoding.DecodeString(encodedKey)
+	if err != nil {
+		return fmt.Errorf("failed to decode OpenSSH public key: %w", err)
+	}
+
+	// Parse the SSH public key
+	publicKey, err := ssh.ParsePublicKey(keyBytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse SSH public key: %w", err)
+	}
+
+	// Extract the crypto public key using CryptoPublicKey interface
+	if cryptoKey, ok := publicKey.(ssh.CryptoPublicKey); ok {
+		if ecdsaPubKey, ok := cryptoKey.CryptoPublicKey().(*ecdsa.PublicKey); ok {
+			// Hash the message and verify signature
+			hashed := sha256.Sum256(message)
+			return verifyECDSASignature(ecdsaPubKey, hashed[:], signature)
+		}
+	}
+
+	return fmt.Errorf("failed to extract ECDSA public key from OpenSSH format")
 }
 
 func verifyOpenSSHEd25519Signature(publicKeyStr string, message, signature []byte) error {

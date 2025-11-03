@@ -14,15 +14,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
 	"hfit/api"
 	"hfit/auth"
 	"hfit/config"
-
-	"gopkg.in/yaml.v2"
+	"hfit/usage"
 )
 
 // fatalError prints an error message with support contact information and exits
@@ -39,7 +37,7 @@ func fatalError(msg string, err error) {
 
 func main() {
 	if len(os.Args) < 2 {
-		printUsage()
+		usage.PrintUsage()
 		os.Exit(1)
 	}
 
@@ -51,7 +49,7 @@ func main() {
 	case "login":
 		handleLoginCommand()
 	case "help", "-h", "--help":
-		printUsage()
+		usage.PrintUsage()
 	case "dbmss":
 		handleDbmssCommand()
 	case "dbs":
@@ -62,8 +60,12 @@ func main() {
 		handleRowsCommand()
 	case "files":
 		handleFilesCommand()
-	case "pkg":
-		handlePkgCommand()
+	case "pkg-example":
+		handlePkgExampleCommand()
+	case "pkg-tmpl":
+		handlePkgTmplCommand()
+	case "pkg-download":
+		handlePkgDownloadCommand()
 	case "download":
 		handleDownloadCommand()
 	default:
@@ -74,31 +76,68 @@ func main() {
 	}
 }
 
-func printUsage() {
-	fmt.Println("hfit - Hot Fixture Tool CLI")
-	fmt.Println("Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>")
-	fmt.Println("GitHub: https://github.com/danielecr/hot-fixture-tool")
-	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  hfit help                                           Show this help message")
-	fmt.Println("  hfit config <hfitd_host> <email> <public_key_path>  Configure connection")
-	fmt.Println("  hfit login                                          Authenticate and get JWT token")
-	fmt.Println("  hfit dbmss                                          List available DBMS providers")
-	fmt.Println("  hfit dbs <dbms>                                     List databases for DBMS provider")
-	fmt.Println("  hfit tables <dbms> <db_id>                          List tables in database")
-	fmt.Println("  hfit rows <dbms> <db_id> <table_id> [filterpart]    Stream table rows as NDJSON")
-	fmt.Println("  hfit files <volume> [filters...]                    Stream files as NDJSON")
-	fmt.Println("  hfit pkg create <package.yaml> <name>               Create new package definition")
-	fmt.Println("  hfit pkg add <package.yaml> <name> <type> <data>    Add resource to package")
-	fmt.Println("  hfit pkg rm <package.yaml> <name>                   Remove resource from package")
-	fmt.Println("  hfit pkg downpack <package.yaml>                    Download and unpack package")
-	fmt.Println("  hfit download <file_path>                           Download file")
-	fmt.Println()
-	fmt.Println("Configuration is stored in ~/.hfit/config")
-	fmt.Println("JWT token is stored in ~/.hfit/token")
-	fmt.Println()
-	fmt.Println("For support, contact: Daniele Cruciani <daniele@smartango.com>")
-	fmt.Println("Project repository: https://github.com/danielecr/hot-fixture-tool")
+// print the same content as hfit-pkg-tmpl.yaml and print it to stdout
+func handlePkgExampleCommand() {
+	fmt.Print(`## Example of hfit package template YAML file
+hfitVersion: 1
+templateName: usecase_data
+projectName: project_name # typically the repository or project name
+packageName: basedata_$1
+prepare:
+  - setVar: dataid
+    from: input
+    source: $1
+  - setVar: usrId
+    from: hot-data
+    hdata:
+        type: dbquery
+        dbms: dbms_mysql1
+        query: "SELECT usrId FROM dbname.datatable WHERE dataid=${dataid} ORDER BY utime LIMIT 1"
+  - setVar: fBaseName
+    from: hot-data
+    hdata:
+        type: volume
+        volume: vol1
+        glob: "*_{dataid}_{usrId}_*.txt"
+        # take the first in mtime desc order:
+        sort: "mtime|desc"
+        # extract the first number of filename as fBaseName value
+        regex_replace: "/([0-9]+).*/$1/"
+exports:
+  dbcreate.sql:
+    type: dbcreate
+    data:
+      dbms: dbms_mysql1
+      tablelist:
+        - dbname1
+        - dbname2
+  tablegroup1.create.sql:
+    type: table-create
+    data:
+      dbms: dbms_mysql1
+      tablelist:
+        - dbname1.table1
+        - dbname2.table2
+        - dbname1.tablex
+      option: <dropcreate|ifnotexists>
+  tabledata1.data.sql:
+    type: table-data
+    data:
+      dbms: dbms_mysql1
+      table: dbname1.table1
+      filter: WHERE key<34 AND key>12
+  tabledata2.data.sql:
+    type: table-data
+    data:
+      dbms: dbms_mysql1
+      table: dbname1.usertable
+      filter: WHERE usrId=${usrId}
+  target-filename.txt:
+    type: file
+    data:
+      volume: datavol1
+      path: relative/path/to/file_${dataid}_${usrId}_${fBaseName}.txt
+`)
 }
 
 func handleConfigCommand() {
@@ -257,203 +296,6 @@ type ExportDefinition struct {
 	Data map[string]interface{} `yaml:"data"`
 }
 
-func handlePkgCommand() {
-	if len(os.Args) < 3 {
-		fmt.Println("Usage:")
-		fmt.Println("  hfit pkg create <package.yaml> <name>")
-		fmt.Println("  hfit pkg add <package.yaml> <name> <type> <data>")
-		fmt.Println("  hfit pkg rm <package.yaml> <name>")
-		fmt.Println("  hfit pkg downpack <package.yaml>")
-		os.Exit(1)
-	}
-
-	subcommand := os.Args[2]
-
-	switch subcommand {
-	case "create":
-		handlePkgCreate()
-	case "add":
-		handlePkgAdd()
-	case "rm":
-		handlePkgRemove()
-	case "downpack":
-		handlePkgDownpack()
-	default:
-		fmt.Printf("Unknown pkg subcommand: %s\n", subcommand)
-		os.Exit(1)
-	}
-}
-
-func handlePkgCreate() {
-	if len(os.Args) < 5 {
-		fmt.Println("Usage: hfit pkg create <package.yaml> <name>")
-		os.Exit(1)
-	}
-
-	packageFile := os.Args[3]
-	packageName := os.Args[4]
-
-	pkg := PackageDefinition{
-		Name:    packageName,
-		Exports: make(map[string]ExportDefinition),
-	}
-
-	data, err := yaml.Marshal(&pkg)
-	if err != nil {
-		fatalError("Failed to marshal YAML", err)
-	}
-
-	err = os.WriteFile(packageFile, data, 0644)
-	if err != nil {
-		fatalError("Failed to write package file", err)
-	}
-
-	fmt.Printf("Created package definition: %s\n", packageFile)
-}
-
-func handlePkgAdd() {
-	if len(os.Args) < 7 {
-		fmt.Println("Usage: hfit pkg add <package.yaml> <name> <type> <data>")
-		fmt.Println("Example: hfit pkg add pkg.yaml db1.sql table-data '{\"dbms\":\"mysql1\",\"table\":\"users\",\"filter\":\"WHERE id < 100\"}'")
-		os.Exit(1)
-	}
-
-	packageFile := os.Args[3]
-	exportName := os.Args[4]
-	exportType := os.Args[5]
-	exportDataStr := os.Args[6]
-
-	// Parse export data JSON
-	var exportData map[string]interface{}
-	if err := json.Unmarshal([]byte(exportDataStr), &exportData); err != nil {
-		fatalError("Failed to parse export data JSON", err)
-	}
-
-	// Validate resource existence
-	client := getAuthenticatedClient()
-	if err := validateResourceExists(client, exportType, exportData); err != nil {
-		fatalError("Resource validation failed", err)
-	}
-
-	// Load existing package
-	var pkg PackageDefinition
-	if data, err := os.ReadFile(packageFile); err == nil {
-		if err := yaml.Unmarshal(data, &pkg); err != nil {
-			fatalError("Failed to parse existing package file", err)
-		}
-	} else {
-		// Create new package if file doesn't exist
-		pkg = PackageDefinition{
-			Name:    "package",
-			Exports: make(map[string]ExportDefinition),
-		}
-	}
-
-	// Add new export
-	pkg.Exports[exportName] = ExportDefinition{
-		Type: exportType,
-		Data: exportData,
-	}
-
-	// Save package
-	data, err := yaml.Marshal(&pkg)
-	if err != nil {
-		fatalError("Failed to marshal YAML", err)
-	}
-
-	err = os.WriteFile(packageFile, data, 0644)
-	if err != nil {
-		fatalError("Failed to write package file", err)
-	}
-
-	fmt.Printf("Added export '%s' to package: %s\n", exportName, packageFile)
-}
-
-func handlePkgRemove() {
-	if len(os.Args) < 5 {
-		fmt.Println("Usage: hfit pkg rm <package.yaml> <name>")
-		os.Exit(1)
-	}
-
-	packageFile := os.Args[3]
-	exportName := os.Args[4]
-
-	// Load existing package
-	data, err := os.ReadFile(packageFile)
-	if err != nil {
-		fatalError("Failed to read package file", err)
-	}
-
-	var pkg PackageDefinition
-	if err := yaml.Unmarshal(data, &pkg); err != nil {
-		fatalError("Failed to parse package file", err)
-	}
-
-	// Remove export
-	if _, exists := pkg.Exports[exportName]; !exists {
-		fatalError("Export not found in package", nil)
-	}
-
-	delete(pkg.Exports, exportName)
-
-	// Save package
-	data, err = yaml.Marshal(&pkg)
-	if err != nil {
-		fatalError("Failed to marshal YAML", err)
-	}
-
-	err = os.WriteFile(packageFile, data, 0644)
-	if err != nil {
-		fatalError("Failed to write package file", err)
-	}
-
-	fmt.Printf("Removed export '%s' from package: %s\n", exportName, packageFile)
-}
-
-func handlePkgDownpack() {
-	if len(os.Args) < 4 {
-		fmt.Println("Usage: hfit pkg downpack <package.yaml>")
-		os.Exit(1)
-	}
-
-	packageFile := os.Args[3]
-
-	// Load package definition
-	data, err := os.ReadFile(packageFile)
-	if err != nil {
-		fatalError("Failed to read package file", err)
-	}
-
-	var pkg PackageDefinition
-	if err := yaml.Unmarshal(data, &pkg); err != nil {
-		fatalError("Failed to parse package file", err)
-	}
-
-	client := getAuthenticatedClient()
-
-	// Call package download API
-	resp, err := client.DownloadPackage(pkg.Name, data)
-	if err != nil {
-		fatalError("Failed to download package", err)
-	}
-	defer resp.Close()
-
-	// Save package file
-	packageTarFile := pkg.Name + ".tar.gz"
-	outFile, err := os.Create(packageTarFile)
-	if err != nil {
-		fatalError("Failed to create output file", err)
-	}
-	defer outFile.Close()
-
-	_, err = io.Copy(outFile, resp)
-	if err != nil {
-		fatalError("Failed to save package", err)
-	}
-
-	fmt.Printf("Package downloaded: %s\n", packageTarFile)
-}
-
 func validateResourceExists(client *api.Client, exportType string, exportData map[string]interface{}) error {
 	switch exportType {
 	case "dbcreate", "table-create", "table-data":
@@ -590,4 +432,258 @@ func printJSON(data interface{}) {
 		fatalError("Failed to marshal JSON", err)
 	}
 	fmt.Println(string(output))
+}
+
+// handlePkgTmplCommand handles package template management commands
+func handlePkgTmplCommand() {
+	if len(os.Args) < 3 {
+		usage.PrintUsagePkgTmpl()
+		os.Exit(1)
+	}
+
+	subcommand := os.Args[2]
+
+	switch subcommand {
+	case "list":
+		handlePkgTmplList()
+	case "show":
+		handlePkgTmplShow()
+	case "create":
+		handlePkgTmplCreate()
+	case "update":
+		handlePkgTmplUpdate()
+	case "patch":
+		handlePkgTmplPatch()
+	case "delete":
+		handlePkgTmplDelete()
+	default:
+		fmt.Printf("Unknown pkg-tmpl subcommand: %s\n", subcommand)
+		os.Exit(1)
+	}
+}
+
+// handlePkgDownloadCommand handles package download using templates
+func handlePkgDownloadCommand() {
+	if len(os.Args) < 3 {
+		fmt.Println("Usage:")
+		fmt.Println("  hfit pkg-download <template_name> [param1] [param2] [param3] ...")
+		fmt.Println("  Parameters are substituted for $1, $2, $3, etc. in the template")
+		os.Exit(1)
+	}
+
+	templateName := os.Args[2]
+	params := os.Args[3:] // Get all remaining parameters
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fatalError("Failed to load configuration", err)
+	}
+
+	token, err := config.LoadToken()
+	if err != nil {
+		fatalError("Failed to load authentication token", err)
+	}
+
+	client := api.NewClient(cfg.HfitdHost, token)
+
+	// Call the package generation API with template name and parameters
+	err = client.GenerateAndDownloadPackage(templateName, params)
+	if err != nil {
+		fatalError("Failed to generate and download package", err)
+	}
+
+	fmt.Printf("Package generated and downloaded successfully from template '%s'\n", templateName)
+}
+
+// handlePkgTmplList lists all package templates for the authenticated user
+func handlePkgTmplList() {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fatalError("Failed to load configuration", err)
+	}
+
+	token, err := config.LoadToken()
+	if err != nil {
+		fatalError("Failed to load authentication token", err)
+	}
+
+	client := api.NewClient(cfg.HfitdHost, token)
+
+	templates, err := client.ListTemplates()
+	if err != nil {
+		fatalError("Failed to list templates", err)
+	}
+
+	if len(templates) == 0 {
+		fmt.Println("No templates found")
+		return
+	}
+
+	fmt.Println("Package Templates:")
+	for _, template := range templates {
+		fmt.Printf("  %s\n", template)
+	}
+}
+
+// handlePkgTmplShow shows the YAML content of a specific template
+func handlePkgTmplShow() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: hfit pkg-tmpl show <template_name>")
+		os.Exit(1)
+	}
+
+	templateName := os.Args[3]
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fatalError("Failed to load configuration", err)
+	}
+
+	token, err := config.LoadToken()
+	if err != nil {
+		fatalError("Failed to load authentication token", err)
+	}
+
+	client := api.NewClient(cfg.HfitdHost, token)
+
+	templateYAML, err := client.GetTemplate(templateName)
+	if err != nil {
+		fatalError("Failed to get template", err)
+	}
+
+	fmt.Print(templateYAML)
+}
+
+// handlePkgTmplCreate creates a new template from a local YAML file
+func handlePkgTmplCreate() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: hfit pkg-tmpl create <template_file.yaml>")
+		os.Exit(1)
+	}
+
+	templateFile := os.Args[3]
+
+	// Read the local YAML file
+	yamlContent, err := os.ReadFile(templateFile)
+	if err != nil {
+		fatalError("Failed to read template file", err)
+	}
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fatalError("Failed to load configuration", err)
+	}
+
+	token, err := config.LoadToken()
+	if err != nil {
+		fatalError("Failed to load authentication token", err)
+	}
+
+	client := api.NewClient(cfg.HfitdHost, token)
+
+	err = client.CreateTemplate(yamlContent)
+	if err != nil {
+		fatalError("Failed to create template", err)
+	}
+
+	fmt.Printf("Template created successfully from file '%s'\n", templateFile)
+}
+
+// handlePkgTmplUpdate updates an existing template from a local YAML file
+func handlePkgTmplUpdate() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: hfit pkg-tmpl update <template_file.yaml>")
+		os.Exit(1)
+	}
+
+	templateFile := os.Args[3]
+
+	// Read the local YAML file
+	yamlContent, err := os.ReadFile(templateFile)
+	if err != nil {
+		fatalError("Failed to read template file", err)
+	}
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fatalError("Failed to load configuration", err)
+	}
+
+	token, err := config.LoadToken()
+	if err != nil {
+		fatalError("Failed to load authentication token", err)
+	}
+
+	client := api.NewClient(cfg.HfitdHost, token)
+
+	err = client.UpdateTemplate(yamlContent)
+	if err != nil {
+		fatalError("Failed to update template", err)
+	}
+
+	fmt.Printf("Template updated successfully from file '%s'\n", templateFile)
+}
+
+// handlePkgTmplPatch partially updates a template and shows the diff
+func handlePkgTmplPatch() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: hfit pkg-tmpl patch <template_file.yaml>")
+		os.Exit(1)
+	}
+
+	templateFile := os.Args[3]
+
+	// Read the local YAML file
+	yamlContent, err := os.ReadFile(templateFile)
+	if err != nil {
+		fatalError("Failed to read template file", err)
+	}
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fatalError("Failed to load configuration", err)
+	}
+
+	token, err := config.LoadToken()
+	if err != nil {
+		fatalError("Failed to load authentication token", err)
+	}
+
+	client := api.NewClient(cfg.HfitdHost, token)
+
+	diffOutput, err := client.PatchTemplate(yamlContent)
+	if err != nil {
+		fatalError("Failed to patch template", err)
+	}
+
+	fmt.Print(diffOutput)
+}
+
+// handlePkgTmplDelete deletes a specific template
+func handlePkgTmplDelete() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: hfit pkg-tmpl delete <template_name>")
+		os.Exit(1)
+	}
+
+	templateName := os.Args[3]
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fatalError("Failed to load configuration", err)
+	}
+
+	token, err := config.LoadToken()
+	if err != nil {
+		fatalError("Failed to load authentication token", err)
+	}
+
+	client := api.NewClient(cfg.HfitdHost, token)
+
+	err = client.DeleteTemplate(templateName)
+	if err != nil {
+		fatalError("Failed to delete template", err)
+	}
+
+	fmt.Printf("Template '%s' deleted successfully\n", templateName)
 }
