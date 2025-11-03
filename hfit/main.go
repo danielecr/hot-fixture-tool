@@ -411,14 +411,15 @@ func getAuthenticatedClient() *api.Client {
 
 func handleDownloadCommand() {
 	if len(os.Args) < 3 {
-		fmt.Println("Usage: hfit download <file_path>")
+		fmt.Println("Usage: hfit download <volume:/path/to/file>")
+		fmt.Println("Example: hfit download datavol1:/logs/app.log")
 		os.Exit(1)
 	}
 
 	client := getAuthenticatedClient()
-	filePath := os.Args[2]
+	volumePath := os.Args[2]
 
-	data, err := client.DownloadFile(filePath)
+	data, err := client.DownloadFile(volumePath)
 	if err != nil {
 		fatalError("Failed to download file", err)
 	}

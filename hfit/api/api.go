@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -278,9 +279,24 @@ func (c *Client) StreamFilesWithFilters(volume string, filters []string) error {
 	return scanner.Err()
 }
 
-// DownloadFile downloads a file
-func (c *Client) DownloadFile(path string) ([]byte, error) {
-	resp, err := c.makeRequest("GET", fmt.Sprintf("/files/download?path=%s", path))
+// DownloadFile downloads a file using volume:/path format
+func (c *Client) DownloadFile(volumePath string) ([]byte, error) {
+	// Parse volume:/path format
+	parts := strings.SplitN(volumePath, ":", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid path format, expected 'volume:/path/to/file', got '%s'", volumePath)
+	}
+
+	volume := parts[0]
+	filePath := parts[1]
+
+	// Use the correct API endpoint: /files/{volume}/download?path={path}
+	endpoint := fmt.Sprintf("/files/%s/download", volume)
+	if filePath != "" {
+		endpoint += fmt.Sprintf("?path=%s", url.QueryEscape(filePath))
+	}
+
+	resp, err := c.makeRequest("GET", endpoint)
 	if err != nil {
 		return nil, err
 	}
