@@ -8,6 +8,27 @@
  * Licensed under the terms specified in the LICENSE file.
  */
 
+// Hot Fixture Tool Daemon API
+//
+//	@title			Hot Fixture Tool Daemon API
+//	@version		1.0.0
+//	@description	API for managing database fixtures, file operations, and package templates
+//	@termsOfService	https://github.com/danielecr/hot-fixture-tool
+//
+//	@contact.name	Daniele Cruciani
+//	@contact.email	daniele@smartango.com
+//
+//	@license.name	MIT
+//	@license.url	https://github.com/danielecr/hot-fixture-tool/blob/main/LICENSE
+//
+//	@host		localhost:8080
+//	@BasePath	/api
+//
+//	@securityDefinitions.apikey	BearerAuth
+//	@in							header
+//	@name						Authorization
+//	@description				JWT Bearer token authentication
+//
 // provide the REST API for Hot Fixture Tool
 package api
 
@@ -15,6 +36,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	_ "hfitd/docs" // Import swagger docs
 
 	"hfitd/admin"
 	"hfitd/auth"
@@ -26,6 +49,7 @@ import (
 	"hfitd/templateapi"
 
 	"github.com/gorilla/mux"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 /*
@@ -84,6 +108,14 @@ func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminSe
 	// Authentication routes (unprotected)
 	router.HandleFunc("/auth/challenge", authManager.GenerateChallenge).Methods("POST")
 	router.HandleFunc("/auth/authenticate", authManager.Authenticate).Methods("POST")
+
+	// Swagger documentation (unprotected)
+	router.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)
+	
+	// Standard swagger.json alias for convenience
+	router.HandleFunc("/swagger.json", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/swagger/doc.json", http.StatusMovedPermanently)
+	}).Methods("GET")
 
 	// Protected routes - apply JWT middleware
 	protected := router.PathPrefix("/").Subrouter()

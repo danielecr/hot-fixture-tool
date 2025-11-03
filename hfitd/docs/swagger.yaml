@@ -1,0 +1,21 @@
+basePath: /api
+host: localhost:8080
+info:
+  contact:
+    email: daniele@smartango.com
+    name: Daniele Cruciani
+  description: API for managing database fixtures, file operations, and package templates
+  license:
+    name: MIT
+    url: https://github.com/danielecr/hot-fixture-tool/blob/main/LICENSE
+  termsOfService: https://github.com/danielecr/hot-fixture-tool
+  title: Hot Fixture Tool Daemon API
+  version: 1.0.0
+paths: {}
+securityDefinitions:
+  BearerAuth:
+    description: JWT Bearer token authentication
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

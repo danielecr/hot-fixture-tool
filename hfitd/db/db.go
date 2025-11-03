@@ -25,20 +25,15 @@ type DatabaseManager struct {
 	configs     map[string]config.DatabaseConfig
 }
 
-// NewDatabaseManager creates a new database manager with multiple DBMS connections
+// NewDatabaseManager creates a new database manager with lazy connection initialization
 func NewDatabaseManager(dbConfigs map[string]config.DatabaseConfig) (*DatabaseManager, error) {
 	manager := &DatabaseManager{
 		connections: make(map[string]*sql.DB),
 		configs:     dbConfigs,
 	}
 
-	for providerName, cfg := range dbConfigs {
-		conn, err := createConnection(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to %s: %v", providerName, err)
-		}
-		manager.connections[providerName] = conn
-	}
+	// No longer establish connections at startup - they will be created on demand
+	// This allows the service to start even if database servers are not available
 
 	return manager, nil
 }
@@ -84,18 +79,34 @@ func (dm *DatabaseManager) Close() error {
 }
 
 // GetConnection returns the database connection for a specific provider
+// Establishes connection on first request (lazy initialization)
 func (dm *DatabaseManager) GetConnection(providerName string) (*sql.DB, error) {
-	conn, exists := dm.connections[providerName]
+	// Check if connection already exists
+	if conn, exists := dm.connections[providerName]; exists {
+		return conn, nil
+	}
+
+	// Check if provider configuration exists
+	cfg, exists := dm.configs[providerName]
 	if !exists {
 		return nil, fmt.Errorf("database provider '%s' not found", providerName)
 	}
+
+	// Create connection on demand
+	conn, err := createConnection(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to %s: %v", providerName, err)
+	}
+
+	// Store connection for reuse
+	dm.connections[providerName] = conn
 	return conn, nil
 }
 
-// GetProviders returns a list of available database providers
+// GetProviders returns a list of available database providers from configuration
 func (dm *DatabaseManager) GetProviders() []string {
-	providers := make([]string, 0, len(dm.connections))
-	for provider := range dm.connections {
+	providers := make([]string, 0, len(dm.configs))
+	for provider := range dm.configs {
 		providers = append(providers, provider)
 	}
 	return providers

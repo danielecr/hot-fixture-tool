@@ -22,6 +22,18 @@ import (
 // SetupDatabaseRoutes sets up all database-related routes on the provided router
 func SetupDatabaseRoutes(router *mux.Router, databaseManager *db.DatabaseManager) {
 	// DBMS provider routes
+
+	// GetProviders godoc
+	//	@Summary		List DBMS providers
+	//	@Description	Get list of all available database management systems
+	//	@Tags			database
+	//	@Accept			json
+	//	@Produce		json
+	//	@Success		200	{array}		string	"List of DBMS providers"
+	//	@Failure		401	{object}	map[string]string	"Unauthorized"
+	//	@Failure		500	{object}	map[string]string	"Internal server error"
+	//	@Security		BearerAuth
+	//	@Router			/db/dbmss [get]
 	router.HandleFunc("/db/dbmss", func(w http.ResponseWriter, r *http.Request) {
 		providers := databaseManager.GetProviders()
 		w.Header().Set("Content-Type", "application/json")
@@ -29,6 +41,20 @@ func SetupDatabaseRoutes(router *mux.Router, databaseManager *db.DatabaseManager
 	}).Methods("GET")
 
 	// Database routes
+
+	// GetDatabases godoc
+	//	@Summary		List databases
+	//	@Description	Get list of all databases for a specific DBMS
+	//	@Tags			database
+	//	@Accept			json
+	//	@Produce		json
+	//	@Param			dbms	path		string	true	"DBMS provider name"	example(mysql)
+	//	@Success		200		{array}		string	"List of database names"
+	//	@Failure		400		{object}	map[string]string	"Bad request - invalid DBMS"
+	//	@Failure		401		{object}	map[string]string	"Unauthorized"
+	//	@Failure		500		{object}	map[string]string	"Internal server error"
+	//	@Security		BearerAuth
+	//	@Router			/db/{dbms}/dbs [get]
 	router.HandleFunc("/db/{dbms}/dbs", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		dbms := vars["dbms"]
@@ -50,6 +76,20 @@ func SetupDatabaseRoutes(router *mux.Router, databaseManager *db.DatabaseManager
 		json.NewEncoder(w).Encode(databases)
 	}).Methods("GET")
 
+	// GetTables godoc
+	//	@Summary		List tables
+	//	@Description	Get list of all tables in a specific database
+	//	@Tags			database
+	//	@Accept			json
+	//	@Produce		json
+	//	@Param			dbms	path		string	true	"DBMS provider name"	example(mysql)
+	//	@Param			dbid	path		string	true	"Database name"		example(myapp_db)
+	//	@Success		200		{array}		string	"List of table names"
+	//	@Failure		400		{object}	map[string]string	"Bad request - invalid DBMS or database"
+	//	@Failure		401		{object}	map[string]string	"Unauthorized"
+	//	@Failure		500		{object}	map[string]string	"Internal server error"
+	//	@Security		BearerAuth
+	//	@Router			/db/{dbms}/{dbid}/tables [get]
 	router.HandleFunc("/db/{dbms}/{dbid}/tables", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		dbms := vars["dbms"]
