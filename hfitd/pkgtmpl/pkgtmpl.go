@@ -27,6 +27,8 @@ import (
 
 	"hfitd/config"
 	"hfitd/db"
+	"hfitd/mysqlexp"
+	"hfitd/pgexp"
 	"hfitd/tmplstorage"
 )
 
@@ -292,12 +294,27 @@ func NewPackageTemplateProcessor(cfg *config.Config, dbManager *db.DatabaseManag
 }
 
 // ProcessTemplate processes a package template with parameters and generates a package
+// Creates a directory structure like:
+//
+// pkg-{templatename}/
+// ├── METADATA/
+// │   ├── package.json        # Package metadata
+// │   └── replacements.json   # Variable substitutions
+// ├── dbcreate.sql           # Database creation export (example)
+// ├── tablegroup1.create.sql # Table creation export (example)
+// ├── tablegroup1.data.sql   # Table data export (example)
+// └── config.txt             # File export (example)
+//
+// The actual file names are determined by the keys in the template's exports section.
+// The final output is a tar.gz archive containing the entire pkg-{templatename}/ directory.
 func (ptp *PackageTemplateProcessor) ProcessTemplate(ctx context.Context, template *PackageTemplate, params []string, userEmail, templateName string, timestamp int64) (string, *tmplstorage.PackageMetadata, error) {
 	// Create variable context
 	vctx := &VariableContext{
 		InputParams:  params,
 		Replacements: make([]Replacement, 0),
 		Variables:    make(map[string]string),
+		DBManager:    ptp.databaseManager,
+		Config:       ptp.config,
 	}
 
 	// Process input parameters
@@ -325,15 +342,22 @@ func (ptp *PackageTemplateProcessor) ProcessTemplate(ctx context.Context, templa
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Process exports (database exports)
+	// Create package directory with proper naming
+	packageDirName := fmt.Sprintf("pkg-%s", templateName)
+	packageDir := filepath.Join(tempDir, packageDirName)
+	if err := os.MkdirAll(packageDir, 0755); err != nil {
+		return "", nil, fmt.Errorf("failed to create package directory: %v", err)
+	}
+
+	// Process exports (database exports) with proper file naming
 	for exportName, export := range template.Exports {
-		if err := ptp.processExport(ctx, export, vctx, tempDir); err != nil {
+		if err := ptp.processExport(ctx, exportName, export, vctx, packageDir); err != nil {
 			return "", nil, fmt.Errorf("failed to process export %s: %v", exportName, err)
 		}
 	}
 
-	// Create METADATA subfolder
-	metadataDir := filepath.Join(tempDir, "METADATA")
+	// Create METADATA subfolder inside the package directory
+	metadataDir := filepath.Join(packageDir, "METADATA")
 	if err := os.MkdirAll(metadataDir, 0755); err != nil {
 		return "", nil, fmt.Errorf("failed to create metadata directory: %v", err)
 	}
@@ -372,19 +396,35 @@ func (ptp *PackageTemplateProcessor) ProcessTemplate(ctx context.Context, templa
 
 	// Create package archive in a temporary location
 	packagePath := filepath.Join("/tmp", fmt.Sprintf("pkg-%s-%d.tar.gz", templateName, timestamp))
-	if err := ptp.createTarGz(tempDir, packagePath); err != nil {
+	if err := ptp.createTarGz(packageDir, packagePath); err != nil {
 		return "", nil, fmt.Errorf("failed to create package archive: %v", err)
 	}
 
 	return packagePath, metadata, nil
 }
 
-// processExport processes a database export (simplified implementation)
-func (ptp *PackageTemplateProcessor) processExport(ctx context.Context, export ExportDefinition, vctx *VariableContext, targetDir string) error {
-	// This is a simplified placeholder - integrate with existing packdownload module
-	// For now, just create placeholder files
-	exportFile := filepath.Join(targetDir, "export.sql")
-	return os.WriteFile(exportFile, []byte("-- Export placeholder\n"), 0644)
+// processExport processes a database export with proper file naming and content
+func (ptp *PackageTemplateProcessor) processExport(ctx context.Context, exportName string, export ExportDefinition, vctx *VariableContext, targetDir string) error {
+	// Substitute variables in export definition
+	if err := vctx.SubstituteExportDefinition(&export); err != nil {
+		return fmt.Errorf("failed to substitute variables in export: %v", err)
+	}
+
+	// Create the target file path using the export key name
+	exportFile := filepath.Join(targetDir, exportName)
+
+	switch export.Type {
+	case "dbcreate":
+		return ptp.processDBCreateExport(export, exportFile)
+	case "create-table":
+		return ptp.processTableCreateExport(export, exportFile)
+	case "table-data":
+		return ptp.processTableDataExport(export, exportFile)
+	case "file":
+		return ptp.processFileExport(export, exportFile)
+	default:
+		return fmt.Errorf("unsupported export type: %s", export.Type)
+	}
 }
 
 // createTarGz creates a tar.gz archive from a directory
@@ -447,4 +487,162 @@ func (ptp *PackageTemplateProcessor) createTarGz(sourceDir, targetPath string) e
 
 		return nil
 	})
+}
+
+// processDBCreateExport handles database creation export
+func (ptp *PackageTemplateProcessor) processDBCreateExport(export ExportDefinition, exportFile string) error {
+	dbms, ok := export.Data["dbms"].(string)
+	if !ok {
+		return fmt.Errorf("dbms not specified for dbcreate export")
+	}
+
+	// Get database connection from the config
+	dsn, err := ptp.getDSN(dbms)
+	if err != nil {
+		return fmt.Errorf("failed to get DSN for %s: %v", dbms, err)
+	}
+
+	// Use appropriate export module based on DBMS
+	switch strings.ToLower(dbms) {
+	case "mysql":
+		return mysqlexp.ExportDatabase(dsn, exportFile)
+	case "postgresql", "postgres":
+		// Extract database name from export data
+		dbname, ok := export.Data["database"].(string)
+		if !ok {
+			return fmt.Errorf("database name not specified for postgresql dbcreate export")
+		}
+		return pgexp.ExportDatabase(dsn, dbname, exportFile)
+	default:
+		return fmt.Errorf("unsupported DBMS: %s", dbms)
+	}
+}
+
+// processTableCreateExport handles table creation export
+func (ptp *PackageTemplateProcessor) processTableCreateExport(export ExportDefinition, exportFile string) error {
+	dbms, ok := export.Data["dbms"].(string)
+	if !ok {
+		return fmt.Errorf("dbms not specified for create-table export")
+	}
+
+	tableName, ok := export.Data["table"].(string)
+	if !ok {
+		return fmt.Errorf("table not specified for create-table export")
+	}
+
+	// Get database connection from the config
+	dsn, err := ptp.getDSN(dbms)
+	if err != nil {
+		return fmt.Errorf("failed to get DSN for %s: %v", dbms, err)
+	}
+
+	// Use appropriate export module based on DBMS
+	switch strings.ToLower(dbms) {
+	case "mysql":
+		return mysqlexp.ExportTable(dsn, tableName, exportFile)
+	case "postgresql", "postgres":
+		return pgexp.ExportTable(dsn, tableName, exportFile)
+	default:
+		return fmt.Errorf("unsupported DBMS: %s", dbms)
+	}
+}
+
+// processTableDataExport handles table data export
+func (ptp *PackageTemplateProcessor) processTableDataExport(export ExportDefinition, exportFile string) error {
+	dbms, ok := export.Data["dbms"].(string)
+	if !ok {
+		return fmt.Errorf("dbms not specified for table-data export")
+	}
+
+	tableName, ok := export.Data["table"].(string)
+	if !ok {
+		return fmt.Errorf("table not specified for table-data export")
+	}
+
+	// Get database connection from the config
+	dsn, err := ptp.getDSN(dbms)
+	if err != nil {
+		return fmt.Errorf("failed to get DSN for %s: %v", dbms, err)
+	}
+
+	// Use appropriate export module based on DBMS
+	switch strings.ToLower(dbms) {
+	case "mysql":
+		return mysqlexp.ExportTableData(dsn, tableName, exportFile)
+	case "postgresql", "postgres":
+		return pgexp.ExportTableData(dsn, tableName, exportFile)
+	default:
+		return fmt.Errorf("unsupported DBMS: %s", dbms)
+	}
+}
+
+// processFileExport handles file export from volumes
+func (ptp *PackageTemplateProcessor) processFileExport(export ExportDefinition, exportFile string) error {
+	volume, ok := export.Data["volume"].(string)
+	if !ok {
+		return fmt.Errorf("volume not specified for file export")
+	}
+
+	sourcePath, ok := export.Data["path"].(string)
+	if !ok {
+		return fmt.Errorf("path not specified for file export")
+	}
+
+	// Get volume path from config
+	volumeConfig, exists := ptp.config.Volumes[volume]
+	if !exists {
+		return fmt.Errorf("volume %s not found in configuration", volume)
+	}
+
+	// Build full source path
+	fullSourcePath := filepath.Join(volumeConfig.Path, sourcePath)
+
+	// Security check - ensure path is within volume
+	if !strings.HasPrefix(fullSourcePath, volumeConfig.Path) {
+		return fmt.Errorf("invalid file path: outside volume boundaries")
+	}
+
+	// Copy file content
+	sourceFile, err := os.Open(fullSourcePath)
+	if err != nil {
+		return fmt.Errorf("failed to open source file: %v", err)
+	}
+	defer sourceFile.Close()
+
+	targetFile, err := os.Create(exportFile)
+	if err != nil {
+		return fmt.Errorf("failed to create target file: %v", err)
+	}
+	defer targetFile.Close()
+
+	_, err = io.Copy(targetFile, sourceFile)
+	if err != nil {
+		return fmt.Errorf("failed to copy file content: %v", err)
+	}
+
+	return nil
+}
+
+// getDSN retrieves the database connection string for the specified DBMS
+func (ptp *PackageTemplateProcessor) getDSN(dbms string) (string, error) {
+	_, err := ptp.databaseManager.GetConnection(dbms)
+	if err != nil {
+		return "", fmt.Errorf("failed to get database connection: %v", err)
+	}
+
+	// For now, we need to reconstruct the DSN from the connection
+	// This is a simplified approach - in a real implementation,
+	// you might want to store the original DSN in the database manager
+	switch strings.ToLower(dbms) {
+	case "mysql":
+		// MySQL DSN format: "user:password@tcp(host:port)/database"
+		// This is a placeholder - you'll need to implement proper DSN reconstruction
+		return "user:password@tcp(localhost:3306)/database", nil
+	case "postgresql", "postgres":
+		// PostgreSQL DSN format: "user=username password=password host=hostname port=5432 dbname=database sslmode=disable"
+		// This is a placeholder - you'll need to implement proper DSN reconstruction
+		return "user=username password=password host=localhost port=5432 dbname=database sslmode=disable", nil
+	default:
+		return "", fmt.Errorf("unsupported DBMS: %s", dbms)
+	}
 }
