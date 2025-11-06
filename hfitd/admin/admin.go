@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	redisclient "hfitd/redis"
 )
@@ -170,6 +171,21 @@ func (s *AdminServer) executeCommand(cmd AdminCommand) AdminResponse {
 			Data:    publicKeyPEM,
 		}
 
+	case "get-jwt-generation-time":
+		generationTime, err := s.GetJWTKeyGenerationTime()
+		if err != nil {
+			return AdminResponse{
+				Success: false,
+				Message: fmt.Sprintf("Failed to get JWT generation time: %v", err),
+			}
+		}
+
+		return AdminResponse{
+			Success: true,
+			Message: "JWT generation time retrieved",
+			Data:    generationTime,
+		}
+
 	default:
 		return AdminResponse{
 			Success: false,
@@ -220,6 +236,22 @@ func (s *AdminServer) renewJWTKeyPair() error {
 		return fmt.Errorf("failed to store JWT private key: %v", err)
 	}
 
+	// Store public key in Redis
+	publicKeyPEM, err := s.publicKeyToPEM(&privateKey.PublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to convert public key to PEM: %v", err)
+	}
+
+	if err := s.redisClient.SetJWTPublicKey(ctx, publicKeyPEM); err != nil {
+		return fmt.Errorf("failed to store JWT public key: %v", err)
+	}
+
+	// Store generation timestamp in RFC3339 format
+	generationTime := time.Now().Format(time.RFC3339)
+	if err := s.redisClient.SetJWTKeyGenerationTime(ctx, generationTime); err != nil {
+		return fmt.Errorf("failed to store JWT key generation time: %v", err)
+	}
+
 	return nil
 }
 
@@ -261,8 +293,17 @@ func (s *AdminServer) GetJWTPublicKey() *rsa.PublicKey {
 
 // getJWTPublicKeyPEM returns the JWT public key in PEM format
 func (s *AdminServer) getJWTPublicKeyPEM() (string, error) {
+	ctx := context.Background()
+
+	// Try to get public key from Redis first
+	publicKeyPEM, err := s.redisClient.GetJWTPublicKey(ctx)
+	if err == nil {
+		return publicKeyPEM, nil
+	}
+
+	// Fallback to in-memory key pair if Redis doesn't have it
 	if s.jwtKeyPair == nil {
-		return "", fmt.Errorf("JWT key pair not initialized")
+		return "", fmt.Errorf("JWT key pair not initialized and not found in Redis")
 	}
 
 	publicKeyDER, err := x509.MarshalPKIXPublicKey(s.jwtKeyPair.PublicKey)
@@ -283,6 +324,12 @@ func (s *AdminServer) GetJWTPublicKeyPEM() (string, error) {
 	return s.getJWTPublicKeyPEM()
 }
 
+// GetJWTKeyGenerationTime returns the JWT key generation timestamp
+func (s *AdminServer) GetJWTKeyGenerationTime() (string, error) {
+	ctx := context.Background()
+	return s.redisClient.GetJWTKeyGenerationTime(ctx)
+}
+
 // privateKeyToPEM converts private key to PEM format
 func (s *AdminServer) privateKeyToPEM(key *rsa.PrivateKey) string {
 	block := &pem.Block{
@@ -290,4 +337,18 @@ func (s *AdminServer) privateKeyToPEM(key *rsa.PrivateKey) string {
 		Bytes: x509.MarshalPKCS1PrivateKey(key),
 	}
 	return string(pem.EncodeToMemory(block))
+}
+
+// publicKeyToPEM converts public key to PEM format
+func (s *AdminServer) publicKeyToPEM(key *rsa.PublicKey) (string, error) {
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal public key: %v", err)
+	}
+
+	block := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	}
+	return string(pem.EncodeToMemory(block)), nil
 }

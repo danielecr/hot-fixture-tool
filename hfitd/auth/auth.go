@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"hfitd/admin"
 	redisclient "hfitd/redis"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -35,7 +36,7 @@ import (
 )
 
 type AuthManager struct {
-	jwtSecret   []byte
+	adminServer *admin.AdminServer
 	redisClient *redisclient.Client
 }
 
@@ -65,9 +66,9 @@ type Claims struct {
 }
 
 // NewAuthManager creates a new authentication manager
-func NewAuthManager(jwtSecret []byte, redisClient *redisclient.Client) (*AuthManager, error) {
+func NewAuthManager(redisClient *redisclient.Client, adminServer *admin.AdminServer) (*AuthManager, error) {
 	return &AuthManager{
-		jwtSecret:   jwtSecret,
+		adminServer: adminServer,
 		redisClient: redisClient,
 	}, nil
 }
@@ -178,8 +179,16 @@ func (am *AuthManager) Authenticate(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(am.jwtSecret)
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+
+	// Get the RSA private key from admin server
+	privateKey := am.adminServer.GetJWTPrivateKey()
+	if privateKey == nil {
+		http.Error(w, "JWT private key not available. Run 'hfitd-cli renew-jwt' to generate keys.", http.StatusInternalServerError)
+		return
+	}
+
+	tokenString, err := token.SignedString(privateKey)
 	if err != nil {
 		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 		return
@@ -220,10 +229,18 @@ func (am *AuthManager) JWTMiddleware(next http.Handler) http.Handler {
 
 		// Parse and validate the token
 		token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			// Verify the token is using RSA signing method
+			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
-			return am.jwtSecret, nil
+
+			// Get the RSA public key from admin server
+			privateKey := am.adminServer.GetJWTPrivateKey()
+			if privateKey == nil {
+				return nil, fmt.Errorf("JWT private key not available")
+			}
+
+			return &privateKey.PublicKey, nil
 		})
 
 		if err != nil {

@@ -61,6 +61,9 @@ func main() {
 	case "get-jwt-public-key":
 		handleGetJWTPublicKey(socketPath)
 
+	case "status":
+		handleStatus(socketPath)
+
 	default:
 		fmt.Printf("Error: Unknown command '%s'\n\n", command)
 		fmt.Printf("Run 'hfitd-cli help' for usage information.\n")
@@ -79,6 +82,7 @@ func printUsage() {
 	fmt.Println("  hfitd-cli adduser <email> <public_key_file_or_content>")
 	fmt.Println("  hfitd-cli renew-jwt")
 	fmt.Println("  hfitd-cli get-jwt-public-key")
+	fmt.Println("  hfitd-cli status                                    Show server and JWT status")
 	fmt.Println()
 	fmt.Println("Environment variables:")
 	fmt.Println("  HFITD_SOCKET_PATH - Path to Unix socket (default: /tmp/hfitd.sock)")
@@ -111,9 +115,9 @@ func handleAddUser(socketPath, email, publicKeyArg string) {
 
 	response := sendCommand(socketPath, cmd)
 	if response.Success {
-		fmt.Printf("✓ %s\n", response.Message)
+		fmt.Printf("[OK] %s\n", response.Message)
 	} else {
-		fmt.Printf("✗ %s\n", response.Message)
+		fmt.Printf("[ERROR] %s\n", response.Message)
 		os.Exit(1)
 	}
 }
@@ -126,9 +130,9 @@ func handleRenewJWT(socketPath string) {
 
 	response := sendCommand(socketPath, cmd)
 	if response.Success {
-		fmt.Printf("✓ %s\n", response.Message)
+		fmt.Printf("[OK] %s\n", response.Message)
 	} else {
-		fmt.Printf("✗ %s\n", response.Message)
+		fmt.Printf("[ERROR] %s\n", response.Message)
 		os.Exit(1)
 	}
 }
@@ -211,4 +215,58 @@ func sendCommand(socketPath string, cmd AdminCommand) AdminResponse {
 	}
 
 	return response
+}
+
+// handleStatus shows server and JWT status
+func handleStatus(socketPath string) {
+	fmt.Println("Hot Fixture Tool Daemon Status")
+	fmt.Println("================================")
+
+	// Check server connectivity
+	response := sendCommand(socketPath, AdminCommand{
+		Action: "get-jwt-public-key",
+		Args:   []string{},
+	})
+
+	if !response.Success {
+		fmt.Printf("[ERROR] Server Status: Not accessible (%s)\n", response.Message)
+		if strings.Contains(response.Message, "connect to hfitd socket") {
+			fmt.Println("        Ensure hfitd server is running")
+		}
+		return
+	}
+
+	fmt.Println("[OK] Server Status: Running and accessible")
+
+	// Check JWT key status
+	if response.Data != "" {
+		fmt.Println("[OK] JWT Status: RSA key pair available")
+		fmt.Println("     JWT tokens can be issued and validated")
+
+		// Get JWT generation time
+		timeResponse := sendCommand(socketPath, AdminCommand{
+			Action: "get-jwt-generation-time",
+			Args:   []string{},
+		})
+
+		var authInfo string
+		if timeResponse.Success && timeResponse.Data != "" {
+			authInfo = fmt.Sprintf("Authentication: RSA JWT (%s)", timeResponse.Data)
+		} else {
+			authInfo = "Authentication: RSA JWT"
+		}
+
+		fmt.Println()
+		fmt.Println("Configuration:")
+		fmt.Printf("  Socket Path: %s\n", socketPath)
+		fmt.Printf("  %s\n", authInfo)
+	} else {
+		fmt.Println("[ERROR] JWT Status: No RSA key pair found")
+		fmt.Println("        Run 'hfitd-cli renew-jwt' to generate JWT signing keys")
+
+		fmt.Println()
+		fmt.Println("Configuration:")
+		fmt.Printf("  Socket Path: %s\n", socketPath)
+		fmt.Println("  Authentication: RSA JWT (keys not generated)")
+	}
 }

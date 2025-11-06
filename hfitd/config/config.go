@@ -51,7 +51,8 @@ type RedisConfig struct {
 }
 
 type AuthConfig struct {
-	JWTSecret string
+	// JWT authentication using RSA key pairs managed by admin server
+	// Keys are stored in Redis and generated via hfitd-cli renew-jwt
 }
 
 // LoadConfigFromEnv loads configuration from environment variables.
@@ -140,11 +141,6 @@ func LoadConfigFromEnv() (*Config, error) {
 		}
 	}
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		return nil, errors.New("JWT_SECRET environment variable is required")
-	}
-
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
 		return nil, errors.New("REDIS_URL environment variable is required")
@@ -161,7 +157,7 @@ func LoadConfigFromEnv() (*Config, error) {
 			URL: redisURL,
 		},
 		Auth: AuthConfig{
-			JWTSecret: jwtSecret,
+			// JWT keys managed by admin server and stored in Redis
 		},
 	}
 

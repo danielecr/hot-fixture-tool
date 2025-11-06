@@ -201,6 +201,40 @@ func (c *Client) SetJWTPrivateKey(ctx context.Context, privateKeyPEM string) err
 	return c.rdb.Set(ctx, "jwt_private_key", privateKeyPEM, 0).Err()
 }
 
+// GetJWTPublicKey retrieves the JWT public key
+func (c *Client) GetJWTPublicKey(ctx context.Context) (string, error) {
+	publicKeyPEM, err := c.rdb.Get(ctx, "jwt_public_key").Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", fmt.Errorf("JWT public key not found")
+		}
+		return "", fmt.Errorf("failed to get JWT public key from Redis: %v", err)
+	}
+	return publicKeyPEM, nil
+}
+
+// SetJWTPublicKey stores the JWT public key
+func (c *Client) SetJWTPublicKey(ctx context.Context, publicKeyPEM string) error {
+	return c.rdb.Set(ctx, "jwt_public_key", publicKeyPEM, 0).Err()
+}
+
+// GetJWTKeyGenerationTime retrieves the JWT key generation timestamp
+func (c *Client) GetJWTKeyGenerationTime(ctx context.Context) (string, error) {
+	timestamp, err := c.rdb.Get(ctx, "jwt_key_generation_time").Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", fmt.Errorf("JWT key generation time not found")
+		}
+		return "", fmt.Errorf("failed to get JWT key generation time from Redis: %v", err)
+	}
+	return timestamp, nil
+}
+
+// SetJWTKeyGenerationTime stores the JWT key generation timestamp
+func (c *Client) SetJWTKeyGenerationTime(ctx context.Context, timestamp string) error {
+	return c.rdb.Set(ctx, "jwt_key_generation_time", timestamp, 0).Err()
+}
+
 // Set stores a key-value pair in Redis
 func (c *Client) Set(ctx context.Context, key, value string, expiration time.Duration) error {
 	return c.rdb.Set(ctx, key, value, expiration).Err()
