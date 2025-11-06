@@ -481,12 +481,11 @@ func handleDownloadCommand() {
 	client := getAuthenticatedClient()
 	volumePath := os.Args[2]
 
-	data, err := client.DownloadFile(volumePath)
+	// Use streaming download for better performance with large files
+	err := client.StreamDownloadFile(volumePath, os.Stdout)
 	if err != nil {
 		fatalAPIError(err)
 	}
-
-	fmt.Print(string(data))
 }
 
 func printJSON(data interface{}) {

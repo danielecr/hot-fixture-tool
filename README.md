@@ -9,6 +9,28 @@ Hot Fixture Tool is compound of two pieces:
 
 ## Ratio and use cases
 
+### Developer workflow
+
+Developer workflow:
+- a developer need to work on code, code that read and modify data
+- developer in general has no access to data
+- developer need to adopt strategy to test data read and data write, by mocking library, and mocking requests
+- using mocks, the service code is not exactly the code the developer tested.
+- real integration tests are often done just by CI tools, and often are hard to define.
+
+Thanks to hfit and hfitd, developer can:
+- define one or more hfit/pkg-tmpl-xxx.yaml
+- automate the download of real server resource (testing server or production server)
+- automate the import into local machine
+- implements effective integration tests
+- use integration tests to fix bug on hot real data
+- keep the .yaml definitions files in the shared repo, since those does not contains real data
+
+Thanks to hfitd, administrator can warrant that only a restrict number of developer has access to data for reading.
+Also hfit command can be integrated into the CI pipeline to automate the import, and the integration tests running.
+
+### Motivations
+
 Development of DataBase centric service involve unit tests and integration tests definition. Unit tests are used to keep the code clean and to lower cyclomatic and other code metrics. Integration tests are used to check the effective correctnes of the service.
 
 This service and tool targets the integration test definition.
@@ -296,3 +318,10 @@ Contributions are welcome! Please feel free to:
 
 By contributing, you help make this tool better while allowing me to explore sustainable development models.
 
+
+
+## submodules
+
+- doc (public)
+- sellpoint
+- premium

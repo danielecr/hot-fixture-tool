@@ -77,7 +77,7 @@ func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminSe
 	}
 
 	// Initialize authentication manager
-	authManager, err := auth.NewAuthManager([]byte(cfg.Auth.JWTSecret), redisClient)
+	authManager, err := auth.NewAuthManager(redisClient, adminServer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize auth manager: %w", err)
 	}

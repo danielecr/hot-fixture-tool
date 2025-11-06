@@ -7,15 +7,14 @@ func printUsagePrefix() {
 	fmt.Println("Copyright (c) 2025 Daniele Cruciani <daniele@smartango.com>")
 	fmt.Println("GitHub: https://github.com/danielecr/hot-fixture-tool")
 	fmt.Println()
+	fmt.Println("Configuration: ~/.hfit/config")
+	fmt.Println("JWT token: ~/.hfit/token")
+	fmt.Println()
 	fmt.Println("Usage:")
 }
 func printUsageSuffix() {
 	fmt.Println()
-	fmt.Println("Configuration is stored in ~/.hfit/config")
-	fmt.Println("JWT token is stored in ~/.hfit/token")
-	fmt.Println()
-	fmt.Println("For support, contact: Daniele Cruciani <daniele@smartango.com>")
-	fmt.Println("Project repository: https://github.com/danielecr/hot-fixture-tool")
+	fmt.Println("Support: Daniele Cruciani <daniele@smartango.com>")
 }
 
 func PrintUsage() {
@@ -28,10 +27,6 @@ func PrintUsage() {
 	fmt.Println("  hfit tables <dbms> <db_id>                          List tables in database")
 	fmt.Println("  hfit rows <dbms> <db_id> <table_id> [filterpart]    Stream table rows as NDJSON")
 	fmt.Println("  hfit files <volume> [filters...]                    Stream files as NDJSON")
-	fmt.Println("  hfit pkg create <package.yaml> <name>               Create new package definition")
-	fmt.Println("  hfit pkg add <package.yaml> <name> <type> <data>    Add resource to package")
-	fmt.Println("  hfit pkg rm <package.yaml> <name>                   Remove resource from package")
-	fmt.Println("  hfit pkg downpack <package.yaml>                    Download and unpack package")
 	fmt.Println("  hfit pkg-tmpl list                                  List all your package templates")
 	fmt.Println("  hfit pkg-tmpl show <template_name>                  Show specific template YAML")
 	fmt.Println("  hfit pkg-tmpl create <template_file.yaml>           Create new template from file")
