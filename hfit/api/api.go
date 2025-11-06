@@ -279,12 +279,12 @@ func (c *Client) StreamFilesWithFilters(volume string, filters []string) error {
 	return scanner.Err()
 }
 
-// DownloadFile downloads a file using volume:/path format
-func (c *Client) DownloadFile(volumePath string) ([]byte, error) {
+// StreamDownloadFile downloads a file using volume:/path format and streams it to the provided writer
+func (c *Client) StreamDownloadFile(volumePath string, writer io.Writer) error {
 	// Parse volume:/path format
 	parts := strings.SplitN(volumePath, ":", 2)
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid path format, expected 'volume:/path/to/file', got '%s'", volumePath)
+		return fmt.Errorf("invalid path format, expected 'volume:/path/to/file', got '%s'", volumePath)
 	}
 
 	volume := parts[0]
@@ -298,16 +298,18 @@ func (c *Client) DownloadFile(volumePath string) ([]byte, error) {
 
 	resp, err := c.makeRequest("GET", endpoint)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	return io.ReadAll(resp.Body)
+	// Stream the file content directly to the writer
+	_, err = io.Copy(writer, resp.Body)
+	return err
 }
 
 // makeHeadRequest makes an authenticated HEAD HTTP request to check resource existence
