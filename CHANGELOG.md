@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.16] - 2025-11-07
+
+### 🐛 Bug Fixes
+
+- Fix github action release
+
 ## [0.9.15] - 2025-11-07
 
 ### 🚀 Features
