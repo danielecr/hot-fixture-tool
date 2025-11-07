@@ -91,14 +91,43 @@ nfpms:
 
 dockers:
   - image_templates:
-      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}"
-      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:latest"
-    dockerfile: hfitd/Dockerfile
+      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-amd64"
+    dockerfile: Dockerfile
     build_flag_templates:
       - --label=org.opencontainers.image.title={{.ProjectName}}
       - --label=org.opencontainers.image.version={{.Version}}
       - --label=org.opencontainers.image.created={{.Date}}
       - --label=org.opencontainers.image.revision={{.FullCommit}}
+      - --platform=linux/amd64
+    goos: linux
+    goarch: amd64
+    ids:
+      - server
+    dir: hfitd
+  - image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-arm64"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - --label=org.opencontainers.image.title={{.ProjectName}}
+      - --label=org.opencontainers.image.version={{.Version}}
+      - --label=org.opencontainers.image.created={{.Date}}
+      - --label=org.opencontainers.image.revision={{.FullCommit}}
+      - --platform=linux/arm64
+    goos: linux
+    goarch: arm64
+    ids:
+      - server
+    dir: hfitd
+
+docker_manifests:
+  - name_template: "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-amd64"
+      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:latest"
+    image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-amd64"
+      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-arm64"
 
 changelog:
   sort: desc

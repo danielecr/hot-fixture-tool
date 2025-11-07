@@ -7,14 +7,14 @@ RUN apk add --no-cache git
 # Set working directory
 WORKDIR /app
 
-# Copy go mod files from hfitd directory
-COPY hfitd/go.mod hfitd/go.sum ./
+# Copy go mod files
+COPY go.mod go.sum ./
 
 # Download dependencies
 RUN go mod download
 
-# Copy hfitd source code
-COPY hfitd/ .
+# Copy source code
+COPY . .
 
 # Build the main server
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hfitd ./cmd/hfitd
