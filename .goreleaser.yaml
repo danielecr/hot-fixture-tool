@@ -43,7 +43,6 @@ builds:
 
 archives:
   - id: release
-    format: tar.gz
     files:
       - LICENSE
       - README.md
@@ -71,9 +70,6 @@ nfpms:
     formats:
       - deb
       - rpm
-    builds:
-      - server
-      - cli-admin
     contents:
       - src: "hfitd/systemd/hfitd.service"
         dst: "/lib/systemd/system/hfitd.service"
@@ -90,35 +86,27 @@ nfpms:
       preremove: "hfitd/scripts/preremove.sh"
       postremove: "hfitd/scripts/postremove.sh"
 
-dockers:
-  - image_templates:
-      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-amd64"
-    dockerfile: Dockerfile
-    build_flag_templates:
-      - --label=org.opencontainers.image.title={{.ProjectName}}
-      - --label=org.opencontainers.image.version={{.Version}}
-      - --label=org.opencontainers.image.created={{.Date}}
-      - --label=org.opencontainers.image.revision={{.FullCommit}}
-      - --platform=linux/amd64
-    goos: linux
-    goarch: amd64
+dockers_v2:
+  - id: hfitd
+    dockerfile: hfitd/Dockerfile
     ids:
       - server
-    dir: hfitd
-  - image_templates:
-      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-arm64"
-    dockerfile: Dockerfile
-    build_flag_templates:
-      - --label=org.opencontainers.image.title={{.ProjectName}}
-      - --label=org.opencontainers.image.version={{.Version}}
-      - --label=org.opencontainers.image.created={{.Date}}
-      - --label=org.opencontainers.image.revision={{.FullCommit}}
-      - --platform=linux/arm64
-    goos: linux
-    goarch: arm64
-    ids:
-      - server
-    dir: hfitd
+      - cli-admin
+    images:
+      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd"
+    tags:
+      - "{{ .Version }}"
+      - "latest"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    extra_files:
+      - "hfitd/.env.example"
+    labels:
+      "org.opencontainers.image.title": "{{.ProjectName}}"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.created": "{{.Date}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
 
 docker_manifests:
   - name_template: "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}"

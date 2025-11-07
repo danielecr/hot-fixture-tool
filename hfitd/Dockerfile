@@ -1,28 +1,4 @@
-# Multi-stage build for Hot Fixture Tool Daemon
-FROM golang:1.23-alpine AS builder
-
-# Install build dependencies
-RUN apk add --no-cache git
-
-# Set working directory
-WORKDIR /app
-
-# Copy go mod files
-COPY go.mod go.sum ./
-
-# Download dependencies
-RUN go mod download
-
-# Copy source code
-COPY . .
-
-# Build the main server
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hfitd ./cmd/hfitd
-
-# Build the CLI tool
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hfitd-cli ./cmd/hfitd-cli
-
-# Final stage
+# GoReleaser v2 compatible Dockerfile
 FROM alpine:latest
 
 LABEL org.opencontainers.image.authors="daniele@smartango.com"
@@ -40,12 +16,14 @@ RUN mkdir -p /app/data /tmp/hfitd && \
 
 WORKDIR /app
 
-# Copy binaries from builder
-COPY --from=builder /app/hfitd .
-COPY --from=builder /app/hfitd-cli .
+# Copy pre-built binaries from GoReleaser build context
+# GoReleaser v2 provides binaries in $TARGETPLATFORM directory
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/hfitd .
+COPY $TARGETPLATFORM/hfitd-cli .
 
-# Copy configuration files
-COPY --from=builder /app/.env.example .
+# Copy configuration files (add to extra_files in goreleaser if needed)
+COPY hfitd/.env.example .env.example
 
 # Make scripts executable
 RUN chmod +x hfitd hfitd-cli
