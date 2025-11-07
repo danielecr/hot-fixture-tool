@@ -1,0 +1,14 @@
+[Unit]
+Description=Hot Fixture Tool Daemon - Admin Socket
+Documentation=https://github.com/danielecr/hot-fixture-tool
+PartOf=hfitd.service
+
+[Socket]
+ListenStream=/run/hfitd/admin.sock
+SocketMode=0600
+SocketUser=hfitd
+SocketGroup=hfitd
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target
