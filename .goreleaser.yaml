@@ -1,0 +1,125 @@
+project_name: hot-fixture-tool
+release: true
+builds:
+  - id: server
+    dir: hfitd
+    main: ./cmd/hfitd/main.go
+    binary: hfitd
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+  - id: cli-admin
+    dir: hfitd
+    main: ./cmd/hfitd-cli/main.go
+    binary: hfitd-cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+  - id: client
+    dir: hfit
+    main: ./main.go
+    binary: hfit
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: release
+    format: tar.gz
+    files:
+      - LICENSE
+      - README.md
+      # - "build/plugins/*"
+      - src: "hfitd/systemd/hfitd.service"
+        dst: "systemd/hfitd.service"
+      - src: "hfitd/systemd/hfitd.socket"  
+        dst: "systemd/hfitd.socket"
+      - src: "hfitd/systemd/hfitd.conf"
+        dst: "systemd/hfitd.conf"
+      - src: "hfitd/.env.example"
+        dst: "hfitd.env.example"
+
+nfpms:
+  - id: hfitd-package
+    package_name: hfitd
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: Daniele Cruciani
+    homepage: https://github.com/danielecr/hot-fixture-tool
+    maintainer: Daniele Cruciani <daniele@smartango.com>
+    description: |-
+      Hot Fixture Tool Daemon - Database fixture management server
+      A powerful tool for managing database fixtures and test data.
+    license: "LICENSE"
+    formats:
+      - deb
+      - rpm
+    builds:
+      - server
+      - cli-admin
+    contents:
+      - src: "hfitd/systemd/hfitd.service"
+        dst: "/lib/systemd/system/hfitd.service"
+      - src: "hfitd/systemd/hfitd.socket"
+        dst: "/lib/systemd/system/hfitd.socket"  
+      - src: "hfitd/systemd/hfitd.conf"
+        dst: "/usr/lib/tmpfiles.d/hfitd.conf"
+      - src: "hfitd/.env.example"
+        dst: "/etc/hfitd/.env"
+        type: config|noreplace
+    scripts:
+      preinstall: |
+        # Create hfitd user
+        if ! id hfitd >/dev/null 2>&1; then
+          useradd --system --home /var/lib/hfitd --shell /sbin/nologin hfitd
+        fi
+      postinstall: |
+        # Create directories and set permissions
+        systemd-tmpfiles --create hfitd.conf
+        # Reload systemd
+        systemctl daemon-reload
+        # Enable but don't start the service
+        systemctl enable hfitd.service
+        echo "Configuration file: /etc/hfitd/.env"
+        echo "Start service: systemctl start hfitd.service"
+      preremove: |
+        # Stop and disable service
+        systemctl stop hfitd.service || true
+        systemctl disable hfitd.service || true
+      postremove: |
+        # Reload systemd
+        systemctl daemon-reload
+
+dockers:
+  - image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}"
+    dockerfile: hfitd/Dockerfile
+
+changelog:
+  sort: desc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+release:
+  github:
+    owner: danielecr
+    name: hot-fixture-tool
