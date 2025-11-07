@@ -24,23 +24,6 @@ jobs:
         with:
           go-version: '1.23'
           
-      - name: Generate CHANGELOG.md
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --verbose --output CHANGELOG.md
-          
-      - name: Commit CHANGELOG.md
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add CHANGELOG.md
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update changelog for ${{ github.ref_name }}"
-            # Push to main branch, not to the tag
-            git push origin HEAD:main
-          fi
-
       - name: Build and release
         uses: goreleaser/goreleaser-action@v6
         with:
