@@ -14,6 +14,11 @@ builds:
     goarch:
       - amd64
       - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
   - id: cli-admin
     dir: hfitd
     main: ./cmd/hfitd-cli/main.go
@@ -27,6 +32,11 @@ builds:
     goarch:
       - amd64
       - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
   - id: client
     dir: hfit
     main: ./main.go
@@ -40,13 +50,21 @@ builds:
     goarch:
       - amd64
       - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
 archives:
-  - id: release
+  - id: hfitd-package
+    name_template: "hfitd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds:
+      - server
+      - cli-admin
     files:
       - LICENSE
       - README.md
-      # - "build/plugins/*"
       - src: "hfitd/systemd/hfitd.service"
         dst: "systemd/hfitd.service"
       - src: "hfitd/systemd/hfitd.socket"  
@@ -55,11 +73,21 @@ archives:
         dst: "systemd/hfitd.conf"
       - src: "hfitd/.env.example"
         dst: "hfitd.env.example"
+  - id: hfit-package  
+    name_template: "hfit_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds:
+      - client
+    files:
+      - LICENSE
+      - README.md
 
 nfpms:
-  - id: hfitd-package
+  - id: hfitd-linux-package
     package_name: hfitd
-    file_name_template: "{{ .ConventionalFileName }}"
+    file_name_template: "hfitd_{{ .Version }}_{{ .Arch }}"
+    builds:
+      - server
+      - cli-admin
     vendor: Daniele Cruciani
     homepage: https://github.com/danielecr/hot-fixture-tool
     maintainer: Daniele Cruciani <daniele@smartango.com>
@@ -85,6 +113,48 @@ nfpms:
       postinstall: "hfitd/scripts/postinstall.sh"
       preremove: "hfitd/scripts/preremove.sh"
       postremove: "hfitd/scripts/postremove.sh"
+  - id: hfit-linux-package
+    package_name: hfit
+    file_name_template: "hfit_{{ .Version }}_{{ .Arch }}"
+    builds:
+      - client
+    vendor: Daniele Cruciani
+    homepage: https://github.com/danielecr/hot-fixture-tool
+    maintainer: Daniele Cruciani <daniele@smartango.com>
+    description: |-
+      Hot Fixture Tool Client - Database fixture management client
+      Command-line client for managing database fixtures and test data.
+    license: "LICENSE"
+    formats:
+      - deb
+      - rpm
+
+# Creates checksums of all archives and binaries
+checksum:
+  name_template: "checksums.txt"
+
+# Creates SBOMs of all archives using syft
+sboms:
+  - artifacts: archive
+  - id: source
+    artifacts: source
+
+# Signs the checksum file with cosign
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+# Creates source tarball
+source:
+  enabled: true
 
 dockers_v2:
   - id: hfitd
@@ -102,12 +172,22 @@ dockers_v2:
       - linux/arm64
     extra_files:
       - "hfitd/.env.example"
-    sbom: false
     labels:
       "org.opencontainers.image.title": "{{.ProjectName}}"
       "org.opencontainers.image.version": "{{.Version}}"
       "org.opencontainers.image.created": "{{.Date}}"
       "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.source": "{{.GitURL}}"
+      "org.opencontainers.image.description": "Hot Fixture Tool Daemon with attestations and signing"
+
+# Signs Docker images with cosign
+docker_signs:
+  - cmd: cosign
+    args:
+      - "sign"
+      - "${artifact}"
+      - "--yes"
+    output: true
 
 changelog:
   sort: desc
