@@ -19,28 +19,27 @@ jobs:
           fetch-depth: 0  # Fetch full history for changelog generation
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if tag is on main branch
+        run: |
+          # Get the branch that contains this tag
+          TAG_BRANCH=$(git branch -r --contains ${{ github.ref_name }} | grep 'origin/main' | head -1)
+          
+          if [ -z "$TAG_BRANCH" ]; then
+            echo "Error: Tag ${{ github.ref_name }} is not on main branch"
+            echo "Available branches containing this tag:"
+            git branch -r --contains ${{ github.ref_name }}
+            echo ""
+            echo "Releases can only be created from main branch"
+            exit 1
+          else
+            echo "Tag ${{ github.ref_name }} found on main branch"
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
           
-      - name: Generate CHANGELOG.md
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --verbose --output CHANGELOG.md
-          
-      - name: Commit CHANGELOG.md
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add CHANGELOG.md
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update changelog for ${{ github.ref_name }}"
-            # Push to main branch, not to the tag
-            git push origin HEAD:main
-          fi
-
       - name: Build and release
         uses: goreleaser/goreleaser-action@v6
         with:
