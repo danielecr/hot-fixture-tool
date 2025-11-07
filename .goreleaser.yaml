@@ -84,27 +84,10 @@ nfpms:
         dst: "/etc/hfitd/.env"
         type: config|noreplace
     scripts:
-      preinstall: |
-        # Create hfitd user
-        if ! id hfitd >/dev/null 2>&1; then
-          useradd --system --home /var/lib/hfitd --shell /sbin/nologin hfitd
-        fi
-      postinstall: |
-        # Create directories and set permissions
-        systemd-tmpfiles --create hfitd.conf
-        # Reload systemd
-        systemctl daemon-reload
-        # Enable but don't start the service
-        systemctl enable hfitd.service
-        echo "Configuration file: /etc/hfitd/.env"
-        echo "Start service: systemctl start hfitd.service"
-      preremove: |
-        # Stop and disable service
-        systemctl stop hfitd.service || true
-        systemctl disable hfitd.service || true
-      postremove: |
-        # Reload systemd
-        systemctl daemon-reload
+      preinstall: "hfitd/scripts/preinstall.sh"
+      postinstall: "hfitd/scripts/postinstall.sh"
+      preremove: "hfitd/scripts/preremove.sh"
+      postremove: "hfitd/scripts/postremove.sh"
 
 dockers:
   - image_templates:
