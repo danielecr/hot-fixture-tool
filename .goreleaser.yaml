@@ -108,16 +108,6 @@ dockers_v2:
       "org.opencontainers.image.created": "{{.Date}}"
       "org.opencontainers.image.revision": "{{.FullCommit}}"
 
-docker_manifests:
-  - name_template: "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-amd64"
-      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:latest"
-    image_templates:
-      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-amd64"
-      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}-arm64"
-
 changelog:
   sort: desc
   filters:
