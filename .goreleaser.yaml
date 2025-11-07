@@ -92,7 +92,13 @@ nfpms:
 dockers:
   - image_templates:
       - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:{{ .Version }}"
+      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd:latest"
     dockerfile: hfitd/Dockerfile
+    build_flag_templates:
+      - --label=org.opencontainers.image.title={{.ProjectName}}
+      - --label=org.opencontainers.image.version={{.Version}}
+      - --label=org.opencontainers.image.created={{.Date}}
+      - --label=org.opencontainers.image.revision={{.FullCommit}}
 
 changelog:
   sort: desc

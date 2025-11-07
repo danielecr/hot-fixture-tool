@@ -7,14 +7,14 @@ RUN apk add --no-cache git
 # Set working directory
 WORKDIR /app
 
-# Copy go mod files
-COPY go.mod go.sum ./
+# Copy go mod files from hfitd directory
+COPY hfitd/go.mod hfitd/go.sum ./
 
 # Download dependencies
 RUN go mod download
 
-# Copy source code
-COPY . .
+# Copy hfitd source code
+COPY hfitd/ .
 
 # Build the main server
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hfitd ./cmd/hfitd
@@ -46,10 +46,9 @@ COPY --from=builder /app/hfitd-cli .
 
 # Copy configuration files
 COPY --from=builder /app/.env.example .
-COPY --from=builder /app/generate_keys.sh .
 
 # Make scripts executable
-RUN chmod +x hfitd hfitd-cli generate_keys.sh
+RUN chmod +x hfitd hfitd-cli
 
 # Switch to app user
 USER hfitd
