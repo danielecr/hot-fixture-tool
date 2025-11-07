@@ -1,0 +1,60 @@
+[Unit]
+Description=Hot Fixture Tool Daemon - Database fixture management server
+Documentation=https://github.com/danielecr/hot-fixture-tool
+After=network.target redis.target
+Wants=network.target
+RequiresMountsFor=/var/lib/hfitd /run/hfitd
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/hfitd
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+# Environment
+EnvironmentFile=-/etc/hfitd/.env
+Environment=HFITD_SOCKET_PATH=/run/hfitd/admin.sock
+WorkingDirectory=/var/lib/hfitd
+
+# User and Group
+User=hfitd
+Group=hfitd
+SupplementaryGroups=redis
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hfitd /run/hfitd /tmp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelLogs=true
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallFilter=@system-service
+SystemCallFilter=~@debug @mount @cpu-emulation @obsolete @privileged @reboot @swap @raw-io
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hfitd
+
+# Runtime directory for socket
+RuntimeDirectory=hfitd
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target
