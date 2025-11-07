@@ -102,6 +102,7 @@ dockers_v2:
       - linux/arm64
     extra_files:
       - "hfitd/.env.example"
+    sbom: false
     labels:
       "org.opencontainers.image.title": "{{.ProjectName}}"
       "org.opencontainers.image.version": "{{.Version}}"
