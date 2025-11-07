@@ -7,6 +7,46 @@ Hot Fixture Tool is compound of two pieces:
 - server (hfitd) installed on server with access hot db and fs data
 - client (hfit) is a CLI interface to the server
 
+## HFit Architecture
+
+```mermaid
+graph TB
+    subgraph "Production Environment"
+        DB1[(Database 1)]
+        DB2[(Database 2)]
+        FS1[File System 1]
+        FS2[File System 2]
+    end
+    
+    subgraph "Hot Fixture Tool Server"
+        HFITD[hfitd Daemon]
+        API[REST API]
+        AUTH[Authentication]
+        REDIS[(Redis Cache)]
+    end
+    
+    subgraph "Development Environment"
+        CLI[hfit CLI]
+        TESTS[Integration Tests]
+        LOCAL[(Local Data and DB)]
+    end
+    
+    DB1 --> HFITD
+    DB2 --> HFITD
+    FS1 --> HFITD
+    FS2 --> HFITD
+    
+    HFITD --> API
+    API --> AUTH
+    HFITD --> REDIS
+    
+    CLI --> API
+    CLI --> LOCAL
+    LOCAL --> TESTS
+```
+
+Redis cache is used only for metadata (package export definition) and user data (public key for access challenge)
+
 ## Ratio and use cases
 
 ### Developer workflow
