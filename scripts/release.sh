@@ -45,11 +45,24 @@ calculate_new_version() {
 generate_changelog() {
     echo "Generating CHANGELOG.md..."
     
-    if git-cliff --output CHANGELOG.md --unreleased --tag "$NEW_VERSION"; then
-        echo "[OK] CHANGELOG.md generated successfully"
+    # Check if CHANGELOG.md exists
+    if [ ! -f "CHANGELOG.md" ]; then
+        echo "CHANGELOG.md doesn't exist, creating a full changelog..."
+        if git-cliff --output CHANGELOG.md --tag "$NEW_VERSION"; then
+            echo "[OK] CHANGELOG.md created successfully"
+        else
+            echo "[ERROR] Failed to create CHANGELOG.md"
+            exit 1
+        fi
     else
-        echo "[ERROR] Failed to generate CHANGELOG.md"
-        exit 1
+        echo "CHANGELOG.md exists, prepending new release..."
+        # Generate only the new release section and prepend to existing changelog
+        if git-cliff --unreleased --tag "$NEW_VERSION" --prepend CHANGELOG.md; then
+            echo "[OK] CHANGELOG.md updated successfully"
+        else
+            echo "[ERROR] Failed to update CHANGELOG.md"
+            exit 1
+        fi
     fi
 }
 
