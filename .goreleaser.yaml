@@ -1,5 +1,4 @@
 project_name: hot-fixture-tool
-release: true
 builds:
   - id: server
     dir: hfitd

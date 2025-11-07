@@ -19,6 +19,22 @@ jobs:
           fetch-depth: 0  # Fetch full history for changelog generation
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if tag is on main branch
+        run: |
+          # Get the branch that contains this tag
+          TAG_BRANCH=$(git branch -r --contains ${{ github.ref_name }} | grep 'origin/main' | head -1)
+          
+          if [ -z "$TAG_BRANCH" ]; then
+            echo "Error: Tag ${{ github.ref_name }} is not on main branch"
+            echo "Available branches containing this tag:"
+            git branch -r --contains ${{ github.ref_name }}
+            echo ""
+            echo "Releases can only be created from main branch"
+            exit 1
+          else
+            echo "Tag ${{ github.ref_name }} found on main branch"
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
