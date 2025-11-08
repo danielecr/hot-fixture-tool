@@ -358,10 +358,3 @@ Contributions are welcome! Please feel free to:
 
 By contributing, you help make this tool better while allowing me to explore sustainable development models.
 
-
-
-## submodules
-
-- doc (public)
-- sellpoint
-- premium
