@@ -19,10 +19,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"hfitd/admin"
 	"hfitd/api"
 	"hfitd/config"
 	"hfitd/db"
+	"hfitd/jwtkeyutils"
 	redisclient "hfitd/redis"
 	"hfitd/socketapi"
 )
@@ -63,11 +63,11 @@ func main() {
 	defer cancel()
 
 	// Create admin server for JWT operations (used by API handler)
-	adminServer := admin.NewAdminServer(redisClient)
+	jwtKeyManager := jwtkeyutils.NewJwtData(redisClient)
 
 	// Start Unix socket API server for maintenance commands
 	socketPath := getSocketPath()
-	socketServer := socketapi.NewSocketServer(socketPath, redisClient)
+	socketServer := socketapi.NewSocketServer(socketPath, redisClient, jwtKeyManager)
 	go func() {
 		if err := socketServer.Start(ctx); err != nil {
 			log.Printf("Socket API server error: %v", err)
@@ -75,7 +75,7 @@ func main() {
 	}()
 
 	// Set up API routes
-	apiHandler, err := api.NewHandler(databaseManager, cfg, adminServer)
+	apiHandler, err := api.NewHandler(databaseManager, cfg, jwtKeyManager)
 	if err != nil {
 		fatalError("Failed to initialize API handler", err)
 	}

@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"hfitd/admin"
+	"hfitd/jwtkeyutils"
 	redisclient "hfitd/redis"
 	"hfitd/security"
 
@@ -28,7 +28,7 @@ import (
 )
 
 type AuthManager struct {
-	adminServer   *admin.AdminServer
+	jwtKeyManager *jwtkeyutils.JwtData
 	redisClient   *redisclient.Client
 	cryptoManager *security.CryptoManager
 }
@@ -59,9 +59,9 @@ type Claims struct {
 }
 
 // NewAuthManager creates a new authentication manager
-func NewAuthManager(redisClient *redisclient.Client, adminServer *admin.AdminServer) (*AuthManager, error) {
+func NewAuthManager(redisClient *redisclient.Client, jwtKeyManager *jwtkeyutils.JwtData) (*AuthManager, error) {
 	return &AuthManager{
-		adminServer:   adminServer,
+		jwtKeyManager: jwtKeyManager,
 		redisClient:   redisClient,
 		cryptoManager: security.NewCryptoManager(),
 	}, nil
@@ -175,8 +175,8 @@ func (am *AuthManager) Authenticate(w http.ResponseWriter, r *http.Request) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 
-	// Get the RSA private key from admin server
-	privateKey := am.adminServer.GetJWTPrivateKey()
+	// Get the RSA private key from JWT key manager
+	privateKey := am.jwtKeyManager.GetJWTPrivateKey()
 	if privateKey == nil {
 		http.Error(w, "JWT private key not available. Run 'hfitd-cli renew-jwt' to generate keys.", http.StatusInternalServerError)
 		return
@@ -228,8 +228,8 @@ func (am *AuthManager) JWTMiddleware(next http.Handler) http.Handler {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
 
-			// Get the RSA public key from admin server
-			privateKey := am.adminServer.GetJWTPrivateKey()
+			// Get the RSA public key from JWT key manager
+			privateKey := am.jwtKeyManager.GetJWTPrivateKey()
 			if privateKey == nil {
 				return nil, fmt.Errorf("JWT private key not available")
 			}

@@ -1,5 +1,5 @@
-// Package admin provides JWT key management for HTTP API authentication
-package admin
+// Package jwtkeyutils provides JWT key management utilities for HTTP API authentication
+package jwtkeyutils
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 	"hfitd/security"
 )
 
-// AdminServer provides JWT key management for HTTP API operations
-type AdminServer struct {
+// JwtData manages JWT key pairs for HTTP API operations
+type JwtData struct {
 	redisClient   *redisclient.Client
 	jwtKeyPair    *JWTKeyPair
 	cryptoManager *security.CryptoManager
@@ -22,9 +22,9 @@ type JWTKeyPair struct {
 	PublicKey  *rsa.PublicKey
 }
 
-// NewAdminServer creates a new admin server for JWT key management
-func NewAdminServer(redisClient *redisclient.Client) *AdminServer {
-	server := &AdminServer{
+// NewJwtData creates a new JWT key manager
+func NewJwtData(redisClient *redisclient.Client) *JwtData {
+	server := &JwtData{
 		redisClient:   redisClient,
 		cryptoManager: security.NewCryptoManager(),
 	}
@@ -38,41 +38,47 @@ func NewAdminServer(redisClient *redisclient.Client) *AdminServer {
 // JWT Key Management Methods (for HTTP API)
 
 // initializeJWTKeyPair initializes JWT key pair if not exists
-func (s *AdminServer) initializeJWTKeyPair() error {
+func (j *JwtData) initializeJWTKeyPair() error {
 	ctx := context.Background()
-	privateKeyPEM, err := s.redisClient.GetJWTPrivateKeyForSigning(ctx)
+	privateKeyPEM, err := j.redisClient.GetJWTPrivateKeyForSigning(ctx)
 	if err == nil {
-		return s.loadJWTKeyPairFromPEM(privateKeyPEM)
+		return j.loadJWTKeyPairFromPEM(privateKeyPEM)
 	}
-	return s.renewJWTKeyPair()
+	return j.renewJWTKeyPair()
+}
+
+// RenewJWTKeyPair generates and stores new JWT key pair (public method for external calls)
+func (j *JwtData) RenewJWTKeyPair() error {
+	return j.renewJWTKeyPair()
 }
 
 // renewJWTKeyPair generates and stores new JWT key pair
-func (s *AdminServer) renewJWTKeyPair() error {
+func (j *JwtData) renewJWTKeyPair() error {
 	// Generate complete key pair in PEM format with timestamp - security module responsibility
-	keyPairPEM, err := s.cryptoManager.KeyGenerator.GenerateJWTKeyPairPEM(2048)
+	keyPairPEM, err := j.cryptoManager.KeyGenerator.GenerateJWTKeyPairPEM(2048)
 	if err != nil {
 		return fmt.Errorf("failed to generate JWT key pair: %v", err)
 	}
 
 	// Store in Redis - pure storage, no crypto validation
 	ctx := context.Background()
-	if err := s.redisClient.SetJWTKeyPairPEM(ctx, keyPairPEM.PrivateKeyPEM, keyPairPEM.PublicKeyPEM, keyPairPEM.GenerationTime); err != nil {
+	if err := j.redisClient.SetJWTKeyPairPEM(ctx, keyPairPEM.PrivateKeyPEM, keyPairPEM.PublicKeyPEM, keyPairPEM.GenerationTime); err != nil {
 		return fmt.Errorf("failed to store JWT key pair: %v", err)
 	}
 
 	// Update in-memory keys for JWT operations - security module handles parsing
-	return s.loadJWTKeyPairFromPEM(keyPairPEM.PrivateKeyPEM)
+	// This ensures the server instance gets updated with new keys
+	return j.loadJWTKeyPairFromPEM(keyPairPEM.PrivateKeyPEM)
 }
 
 // loadJWTKeyPairFromPEM loads keys into memory for JWT signing
-func (s *AdminServer) loadJWTKeyPairFromPEM(privateKeyPEM string) error {
-	privateKey, err := s.cryptoManager.KeyParser.ParseJWTPrivateKeyForSigning(privateKeyPEM)
+func (j *JwtData) loadJWTKeyPairFromPEM(privateKeyPEM string) error {
+	privateKey, err := j.cryptoManager.KeyParser.ParseJWTPrivateKeyForSigning(privateKeyPEM)
 	if err != nil {
 		return fmt.Errorf("failed to parse private key: %v", err)
 	}
 
-	s.jwtKeyPair = &JWTKeyPair{
+	j.jwtKeyPair = &JWTKeyPair{
 		PrivateKey: privateKey,
 		PublicKey:  &privateKey.PublicKey,
 	}
@@ -80,36 +86,36 @@ func (s *AdminServer) loadJWTKeyPairFromPEM(privateKeyPEM string) error {
 }
 
 // GetJWTPrivateKey returns the JWT private key for signing
-func (s *AdminServer) GetJWTPrivateKey() *rsa.PrivateKey {
-	if s.jwtKeyPair == nil {
+func (j *JwtData) GetJWTPrivateKey() *rsa.PrivateKey {
+	if j.jwtKeyPair == nil {
 		return nil
 	}
-	return s.jwtKeyPair.PrivateKey
+	return j.jwtKeyPair.PrivateKey
 }
 
 // GetJWTPublicKey returns the JWT public key for verification
-func (s *AdminServer) GetJWTPublicKey() *rsa.PublicKey {
-	if s.jwtKeyPair == nil {
+func (j *JwtData) GetJWTPublicKey() *rsa.PublicKey {
+	if j.jwtKeyPair == nil {
 		return nil
 	}
-	return s.jwtKeyPair.PublicKey
+	return j.jwtKeyPair.PublicKey
 }
 
 // getJWTPublicKeyPEM returns public key PEM for export (no conversion needed)
-func (s *AdminServer) getJWTPublicKeyPEM() (string, error) {
+func (j *JwtData) getJWTPublicKeyPEM() (string, error) {
 	ctx := context.Background()
-	publicKeyPEM, _, err := s.redisClient.GetJWTPublicKeyInfo(ctx)
+	publicKeyPEM, _, err := j.redisClient.GetJWTPublicKeyInfo(ctx)
 	return publicKeyPEM, err
 }
 
 // GetJWTPublicKeyPEM returns the JWT public key in PEM format (public method)
-func (s *AdminServer) GetJWTPublicKeyPEM() (string, error) {
-	return s.getJWTPublicKeyPEM()
+func (j *JwtData) GetJWTPublicKeyPEM() (string, error) {
+	return j.getJWTPublicKeyPEM()
 }
 
 // GetJWTKeyGenerationTime returns generation timestamp
-func (s *AdminServer) GetJWTKeyGenerationTime() (string, error) {
+func (j *JwtData) GetJWTKeyGenerationTime() (string, error) {
 	ctx := context.Background()
-	_, generationTime, err := s.redisClient.GetJWTPublicKeyInfo(ctx)
+	_, generationTime, err := j.redisClient.GetJWTPublicKeyInfo(ctx)
 	return generationTime, err
 }

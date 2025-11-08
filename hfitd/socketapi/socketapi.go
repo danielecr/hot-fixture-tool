@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 
+	"hfitd/jwtkeyutils"
 	redisclient "hfitd/redis"
 	"hfitd/security"
 )
@@ -43,14 +44,16 @@ type SocketServer struct {
 	socketPath    string
 	redisClient   *redisclient.Client
 	cryptoManager *security.CryptoManager
+	jwtKeyManager *jwtkeyutils.JwtData
 }
 
 // NewSocketServer creates a new Unix socket server for maintenance operations
-func NewSocketServer(socketPath string, redisClient *redisclient.Client) *SocketServer {
+func NewSocketServer(socketPath string, redisClient *redisclient.Client, jwtKeyManager *jwtkeyutils.JwtData) *SocketServer {
 	return &SocketServer{
 		socketPath:    socketPath,
 		redisClient:   redisClient,
 		cryptoManager: security.NewCryptoManager(),
+		jwtKeyManager: jwtKeyManager,
 	}
 }
 
@@ -212,27 +215,17 @@ func (s *SocketServer) handleAddUser(ctx context.Context, email, publicKeyPEM st
 
 // handleRenewJWT renews the JWT key pair
 func (s *SocketServer) handleRenewJWT() Response {
-	// Generate complete key pair in PEM format with timestamp
-	keyPairPEM, err := s.cryptoManager.KeyGenerator.GenerateJWTKeyPairPEM(2048)
-	if err != nil {
+	// Use the JWT key manager to renew keys - this updates both Redis and the server instance
+	if err := s.jwtKeyManager.RenewJWTKeyPair(); err != nil {
 		return Response{
 			Success: false,
-			Message: fmt.Sprintf("Failed to generate JWT key pair: %v", err),
-		}
-	}
-
-	// Store in Redis
-	ctx := context.Background()
-	if err := s.redisClient.SetJWTKeyPairPEM(ctx, keyPairPEM.PrivateKeyPEM, keyPairPEM.PublicKeyPEM, keyPairPEM.GenerationTime); err != nil {
-		return Response{
-			Success: false,
-			Message: fmt.Sprintf("Failed to store JWT key pair: %v", err),
+			Message: fmt.Sprintf("Failed to renew JWT key pair: %v", err),
 		}
 	}
 
 	return Response{
 		Success: true,
-		Message: "JWT key pair renewed successfully",
+		Message: "JWT key pair renewed successfully - all existing tokens are now invalid",
 	}
 }
 
