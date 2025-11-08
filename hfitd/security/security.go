@@ -258,10 +258,11 @@ func (sv *SignatureVerifier) verifyOpenSSHECDSASignature(publicKeyStr string, me
 
 // verifyOpenSSHEd25519Signature verifies signature for OpenSSH Ed25519 format
 func (sv *SignatureVerifier) verifyOpenSSHEd25519Signature(publicKeyStr string, message, signature []byte) error {
-	// TODO: Implement Ed25519 signature verification
-	// This would use ed25519.Verify when fully implemented
-	_ = ed25519.PublicKey(nil) // Reference to avoid import error
-	return fmt.Errorf("Ed25519 signature verification not implemented")
+	// TODO: add test for this
+	if ed25519.Verify([]byte(publicKeyStr), []byte(message), []byte(signature)) {
+		return nil // Signature is valid
+	}
+	return fmt.Errorf("Ed25519 signature failed verification")
 }
 
 // HashGenerator provides methods for generating cryptographic hashes
