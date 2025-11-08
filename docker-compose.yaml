@@ -20,27 +20,28 @@ services:
 
   # Hot Fixture Tool Daemon
   hfitd:
-    build:
-      context: ./hfitd
-      dockerfile: Dockerfile
+    image: ghcr.io/danielecr/hfitd:latest
     restart: unless-stopped
     environment:
       # Server Configuration
       SERVER_ADDRESS: ":8080"
       
+      # DBMS providers
+      DBMS_PROVIDERS: MYSQL1
       # Database Configuration (connect to your existing database)
-      DB_HOST: your_db_host
-      DB_PORT: 5432
-      DB_USER: your_db_user
-      DB_PASSWORD: your_db_password
-      DB_NAME: your_database_name
-      
+      "MYSQL1.DB_HOST": your_db_host
+      "MYSQL1.DB_PORT": 5432
+      "MYSQL1.DB_USER": your_db_user
+      "MYSQL1.DB_PASSWORD": your_db_password
+      "MYSQL1.DB_NAME": your_database_name
+
+      # volumes
+      VOLUMES: VOLUME1
+      "VOLUME1.PATH": /app/data
+
       # Redis Configuration
       REDIS_URL: "redis://:redis_secure_password@redis:6379"
-      
-      # Authentication Configuration
-      JWT_SECRET: "production-jwt-secret-change-this-to-something-very-secure-and-random"
-      
+            
       # Admin Configuration
       HFITD_SOCKET_PATH: "/tmp/hfitd/hfitd.sock"
     volumes:

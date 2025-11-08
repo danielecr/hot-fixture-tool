@@ -19,20 +19,15 @@ docker-compose ps
 
 ### 2. Initialize Admin Access
 ```bash
-# Generate keys for the first user (admin)
-cd hfitd
-./generate_keys.sh
 
-# Add admin user via CLI
-docker-compose exec hfitd ./hfitd-cli adduser admin@yourdomain.com "$(cat public_key.pem)"
+# Add user via CLI
+docker-compose exec hfitd ./hfitd-cli adduser devuser@yourdomain.com "$(cat public_key.pem)"
 ```
 
 ### 3. Test Authentication
 ```bash
 # Request challenge
-curl -X POST http://localhost:8080/auth/challenge \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin@yourdomain.com"}'
+hfit login
 
 # Get JWT public key for verification
 curl http://localhost:8080/.well-known/jwks.json
