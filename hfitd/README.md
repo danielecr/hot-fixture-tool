@@ -221,10 +221,10 @@ user__bob@company.com   -> "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhki..."
 ```
 
 **Benefits:**
-- ✅ Multi-user support with individual authentication
-- ✅ Scalable user management
-- ✅ Easy user onboarding/offboarding
-- ✅ No shared authentication secrets
+- Multi-user support with individual authentication
+- Scalable user management
+- Easy user onboarding/offboarding
+- No shared authentication secrets
 
 **Note:** The `.env` file is automatically loaded if present. System environment variables take precedence over `.env` file values.
 
@@ -260,14 +260,12 @@ openssl rsa -in alice_private_key.pem -pubout -out alice_public_key.pem
 ```
 
 ### 4. Add User Public Keys via CLI
+
+Developer must use keypair to authenticate to the server.
+Each developer share their own public key with the administator, in PEM or ssh format.
+Administrator add a user with hfit-cli command by email and public key:
+
 ```bash
-# Generate key pair for a user
-./generate_keys.sh
-
-# Rename keys for the user
-mv private_key.pem alice_private_key.pem  
-mv public_key.pem alice_public_key.pem
-
 # Add user to the system (server must be running)
 ./hfitd-cli adduser alice@example.com alice_public_key.pem
 
@@ -280,6 +278,9 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...
 ```
 
 ### 5. JWT Key Management
+
+JWT keypair is generated at first server start. It can be renewed:
+
 ```bash
 # Renew JWT signing keys (invalidates existing tokens)
 ./hfitd-cli renew-jwt
@@ -309,7 +310,7 @@ export PUBLIC_KEY_PEM="$(cat public_key.pem)"
 
 ### 3. Run the Service
 ```bash
-go run main.go
+go run cmd/hfitd/main.go
 ```
 
 ### 4. Client Authentication Example (Go)
@@ -350,7 +351,7 @@ headers := map[string]string{
 go mod tidy
 
 # Build the application
-go build
+go build ./cmd/hfitd
 
 # Run the service
 ./hfitd
@@ -358,6 +359,4 @@ go build
 
 ## Dependencies
 
-- [gorilla/mux](https://github.com/gorilla/mux) - HTTP router
-- [golang-jwt/jwt](https://github.com/golang-jwt/jwt) - JWT token handling
-- [lib/pq](https://github.com/lib/pq) - PostgreSQL driver
+See go.mod for dependencies

@@ -22,6 +22,10 @@ First, configure the CLI with your server details and authentication:
 ./hfit config https://your-hfitd-server.com user@example.com /path/to/your/private_key.pem
 ```
 
+Use `./generate_keys.sh` to generate `private_key.pem` and `public_key.pem` if needed.
+
+Share email address used and `public_key.pem` with hfitd server administrator.
+
 ## Authentication
 
 Before making API calls, authenticate to get a JWT token:
