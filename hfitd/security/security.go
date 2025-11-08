@@ -114,23 +114,29 @@ func (kp *KeyParser) ParseRSAPrivateKeyFromPEM(privateKeyPEM string) (*rsa.Priva
 	return privateKey, nil
 }
 
-// ValidatePublicKey validates both PEM and OpenSSH format public keys
+// ValidatePublicKey validates public keys in multiple formats (PEM, OpenSSH, etc.)
 func (kp *KeyParser) ValidatePublicKey(publicKey string) error {
 	publicKey = strings.TrimSpace(publicKey)
 
-	// Check if it's PEM format
+	if publicKey == "" {
+		return fmt.Errorf("empty public key")
+	}
+
+	// Try PEM format first
 	if strings.Contains(publicKey, "-----BEGIN") {
 		_, err := kp.ParsePEMPublicKey(publicKey)
-		return err
+		if err == nil {
+			return nil // Valid PEM format
+		}
 	}
 
-	// Check if it's OpenSSH format (ssh-rsa, ssh-ed25519, etc.)
-	if strings.HasPrefix(publicKey, "ssh-") {
-		_, _, _, _, err := ssh.ParseAuthorizedKey([]byte(publicKey))
-		return err
+	// Try OpenSSH format (supports all SSH key types)
+	if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(publicKey)); err == nil {
+		return nil // Valid OpenSSH format
 	}
 
-	return fmt.Errorf("unsupported public key format")
+	// If both formats fail, return error with helpful message
+	return fmt.Errorf("unsupported public key format - expected PEM (-----BEGIN PUBLIC KEY-----) or OpenSSH format (ssh-rsa, ecdsa-sha2-*, ssh-ed25519, etc.)")
 }
 
 // DetectKeyFormat detects the format of a public key

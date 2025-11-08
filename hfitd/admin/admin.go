@@ -40,11 +40,16 @@ type AdminResponse struct {
 
 // NewAdminServer creates a new admin server
 func NewAdminServer(socketPath string, redisClient *redisclient.Client) *AdminServer {
-	return &AdminServer{
+	server := &AdminServer{
 		socketPath:    socketPath,
 		redisClient:   redisClient,
 		cryptoManager: security.NewCryptoManager(),
 	}
+
+	// Initialize JWT keys from Redis for HTTP API operations
+	server.initializeJWTKeyPair()
+
+	return server
 }
 
 // Start starts the Unix socket server

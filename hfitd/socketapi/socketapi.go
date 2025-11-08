@@ -188,8 +188,11 @@ func (s *SocketServer) handleStatus() Response {
 
 // handleAddUser adds a new user with public key validation
 func (s *SocketServer) handleAddUser(ctx context.Context, email, publicKeyPEM string) Response {
+	log.Printf("Adding user %s with public key (first 50 chars): %.50s...", email, publicKeyPEM)
+
 	// Validate public key using security module
 	if err := s.cryptoManager.KeyParser.ValidatePublicKey(publicKeyPEM); err != nil {
+		log.Printf("Public key validation failed for user %s: %v", email, err)
 		return Response{
 			Success: false,
 			Message: fmt.Sprintf("Invalid public key format: %v", err),
