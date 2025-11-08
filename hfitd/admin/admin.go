@@ -1,22 +1,17 @@
-// Package admin provides Unix socket server for administrative commands
+// Package admin provides JWT key management for HTTP API authentication
 package admin
 
 import (
-	"bufio"
 	"context"
 	"crypto/rsa"
-	"encoding/json"
 	"fmt"
-	"log"
-	"net"
-	"os"
 
 	redisclient "hfitd/redis"
 	"hfitd/security"
 )
 
+// AdminServer provides JWT key management for HTTP API operations
 type AdminServer struct {
-	socketPath    string
 	redisClient   *redisclient.Client
 	jwtKeyPair    *JWTKeyPair
 	cryptoManager *security.CryptoManager
@@ -27,21 +22,9 @@ type JWTKeyPair struct {
 	PublicKey  *rsa.PublicKey
 }
 
-type AdminCommand struct {
-	Action string   `json:"action"`
-	Args   []string `json:"args"`
-}
-
-type AdminResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-	Data    string `json:"data,omitempty"`
-}
-
-// NewAdminServer creates a new admin server
-func NewAdminServer(socketPath string, redisClient *redisclient.Client) *AdminServer {
+// NewAdminServer creates a new admin server for JWT key management
+func NewAdminServer(redisClient *redisclient.Client) *AdminServer {
 	server := &AdminServer{
-		socketPath:    socketPath,
 		redisClient:   redisClient,
 		cryptoManager: security.NewCryptoManager(),
 	}
@@ -52,166 +35,7 @@ func NewAdminServer(socketPath string, redisClient *redisclient.Client) *AdminSe
 	return server
 }
 
-// Start starts the Unix socket server
-func (s *AdminServer) Start(ctx context.Context) error {
-	// Remove existing socket file
-	if err := os.RemoveAll(s.socketPath); err != nil {
-		return fmt.Errorf("failed to remove existing socket: %v", err)
-	}
-
-	// Create Unix socket listener
-	listener, err := net.Listen("unix", s.socketPath)
-	if err != nil {
-		return fmt.Errorf("failed to create Unix socket: %v", err)
-	}
-	defer listener.Close()
-
-	// Set socket permissions (owner read/write only)
-	if err := os.Chmod(s.socketPath, 0600); err != nil {
-		return fmt.Errorf("failed to set socket permissions: %v", err)
-	}
-
-	log.Printf("Admin server listening on Unix socket: %s", s.socketPath)
-
-	// Initialize JWT key pair if not exists
-	if err := s.initializeJWTKeyPair(); err != nil {
-		return fmt.Errorf("failed to initialize JWT key pair: %v", err)
-	}
-
-	go func() {
-		<-ctx.Done()
-		listener.Close()
-	}()
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return nil
-			default:
-				log.Printf("Failed to accept connection: %v", err)
-				continue
-			}
-		}
-
-		go s.handleConnection(conn)
-	}
-}
-
-// handleConnection handles a single client connection
-func (s *AdminServer) handleConnection(conn net.Conn) {
-	defer conn.Close()
-
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		var cmd AdminCommand
-		if err := json.Unmarshal([]byte(line), &cmd); err != nil {
-			s.sendResponse(conn, AdminResponse{
-				Success: false,
-				Message: fmt.Sprintf("Invalid command format: %v", err),
-			})
-			continue
-		}
-
-		response := s.executeCommand(cmd)
-		s.sendResponse(conn, response)
-	}
-}
-
-// executeCommand executes an admin command
-func (s *AdminServer) executeCommand(cmd AdminCommand) AdminResponse {
-	ctx := context.Background()
-
-	switch cmd.Action {
-	case "adduser":
-		if len(cmd.Args) != 2 {
-			return AdminResponse{
-				Success: false,
-				Message: "Usage: adduser <email> <public_key_pem>",
-			}
-		}
-		email, publicKeyPEM := cmd.Args[0], cmd.Args[1]
-
-		// Validate public key using security module before storing
-		if err := s.cryptoManager.KeyParser.ValidatePublicKey(publicKeyPEM); err != nil {
-			return AdminResponse{
-				Success: false,
-				Message: fmt.Sprintf("Invalid public key format: %v", err),
-			}
-		}
-
-		// Store validated key in Redis
-		if err := s.redisClient.SetUserPublicKey(ctx, email, publicKeyPEM); err != nil {
-			return AdminResponse{
-				Success: false,
-				Message: fmt.Sprintf("Failed to add user: %v", err),
-			}
-		}
-
-		return AdminResponse{
-			Success: true,
-			Message: fmt.Sprintf("User %s added successfully", email),
-		}
-
-	case "renew-jwt":
-		if err := s.renewJWTKeyPair(); err != nil {
-			return AdminResponse{
-				Success: false,
-				Message: fmt.Sprintf("Failed to renew JWT key pair: %v", err),
-			}
-		}
-
-		return AdminResponse{
-			Success: true,
-			Message: "JWT key pair renewed successfully",
-		}
-
-	case "get-jwt-public-key":
-		publicKeyPEM, err := s.getJWTPublicKeyPEM()
-		if err != nil {
-			return AdminResponse{
-				Success: false,
-				Message: fmt.Sprintf("Failed to get JWT public key: %v", err),
-			}
-		}
-
-		return AdminResponse{
-			Success: true,
-			Message: "JWT public key retrieved",
-			Data:    publicKeyPEM,
-		}
-
-	case "get-jwt-generation-time":
-		generationTime, err := s.GetJWTKeyGenerationTime()
-		if err != nil {
-			return AdminResponse{
-				Success: false,
-				Message: fmt.Sprintf("Failed to get JWT generation time: %v", err),
-			}
-		}
-
-		return AdminResponse{
-			Success: true,
-			Message: "JWT generation time retrieved",
-			Data:    generationTime,
-		}
-
-	default:
-		return AdminResponse{
-			Success: false,
-			Message: fmt.Sprintf("Unknown command: %s", cmd.Action),
-		}
-	}
-}
-
-// sendResponse sends a response to the client
-func (s *AdminServer) sendResponse(conn net.Conn, response AdminResponse) {
-	data, _ := json.Marshal(response)
-	conn.Write(append(data, '\n'))
-}
+// JWT Key Management Methods (for HTTP API)
 
 // initializeJWTKeyPair initializes JWT key pair if not exists
 func (s *AdminServer) initializeJWTKeyPair() error {

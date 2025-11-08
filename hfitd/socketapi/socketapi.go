@@ -21,7 +21,6 @@ import (
 	"net"
 	"os"
 
-	"hfitd/admin"
 	redisclient "hfitd/redis"
 	"hfitd/security"
 )
@@ -43,16 +42,14 @@ type Response struct {
 type SocketServer struct {
 	socketPath    string
 	redisClient   *redisclient.Client
-	adminServer   *admin.AdminServer
 	cryptoManager *security.CryptoManager
 }
 
 // NewSocketServer creates a new Unix socket server for maintenance operations
-func NewSocketServer(socketPath string, redisClient *redisclient.Client, adminServer *admin.AdminServer) *SocketServer {
+func NewSocketServer(socketPath string, redisClient *redisclient.Client) *SocketServer {
 	return &SocketServer{
 		socketPath:    socketPath,
 		redisClient:   redisClient,
-		adminServer:   adminServer,
 		cryptoManager: security.NewCryptoManager(),
 	}
 }

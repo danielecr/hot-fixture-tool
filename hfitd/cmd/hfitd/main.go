@@ -63,11 +63,11 @@ func main() {
 	defer cancel()
 
 	// Create admin server for JWT operations (used by API handler)
-	adminServer := admin.NewAdminServer("", redisClient)
+	adminServer := admin.NewAdminServer(redisClient)
 
 	// Start Unix socket API server for maintenance commands
 	socketPath := getSocketPath()
-	socketServer := socketapi.NewSocketServer(socketPath, redisClient, adminServer)
+	socketServer := socketapi.NewSocketServer(socketPath, redisClient)
 	go func() {
 		if err := socketServer.Start(ctx); err != nil {
 			log.Printf("Socket API server error: %v", err)
