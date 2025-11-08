@@ -24,6 +24,7 @@ import (
 	"hfitd/config"
 	"hfitd/db"
 	redisclient "hfitd/redis"
+	"hfitd/socketapi"
 )
 
 // fatalError prints an error message with support contact information and exits
@@ -61,12 +62,15 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start admin Unix socket server
+	// Create admin server for JWT operations (used by API handler)
+	adminServer := admin.NewAdminServer("", redisClient)
+
+	// Start Unix socket API server for maintenance commands
 	socketPath := getSocketPath()
-	adminServer := admin.NewAdminServer(socketPath, redisClient)
+	socketServer := socketapi.NewSocketServer(socketPath, redisClient, adminServer)
 	go func() {
-		if err := adminServer.Start(ctx); err != nil {
-			log.Printf("Admin server error: %v", err)
+		if err := socketServer.Start(ctx); err != nil {
+			log.Printf("Socket API server error: %v", err)
 		}
 	}()
 
