@@ -4,24 +4,22 @@ package admin
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"log"
 	"net"
 	"os"
-	"time"
 
 	redisclient "hfitd/redis"
+	"hfitd/security"
 )
 
 type AdminServer struct {
-	socketPath  string
-	redisClient *redisclient.Client
-	jwtKeyPair  *JWTKeyPair
+	socketPath    string
+	redisClient   *redisclient.Client
+	jwtKeyPair    *JWTKeyPair
+	cryptoManager *security.CryptoManager
 }
 
 type JWTKeyPair struct {
@@ -43,8 +41,9 @@ type AdminResponse struct {
 // NewAdminServer creates a new admin server
 func NewAdminServer(socketPath string, redisClient *redisclient.Client) *AdminServer {
 	return &AdminServer{
-		socketPath:  socketPath,
-		redisClient: redisClient,
+		socketPath:    socketPath,
+		redisClient:   redisClient,
+		cryptoManager: security.NewCryptoManager(),
 	}
 }
 
@@ -131,6 +130,15 @@ func (s *AdminServer) executeCommand(cmd AdminCommand) AdminResponse {
 		}
 		email, publicKeyPEM := cmd.Args[0], cmd.Args[1]
 
+		// Validate public key using security module before storing
+		if err := s.cryptoManager.KeyParser.ValidatePublicKey(publicKeyPEM); err != nil {
+			return AdminResponse{
+				Success: false,
+				Message: fmt.Sprintf("Invalid public key format: %v", err),
+			}
+		}
+
+		// Store validated key in Redis
 		if err := s.redisClient.SetUserPublicKey(ctx, email, publicKeyPEM); err != nil {
 			return AdminResponse{
 				Success: false,
@@ -203,66 +211,39 @@ func (s *AdminServer) sendResponse(conn net.Conn, response AdminResponse) {
 // initializeJWTKeyPair initializes JWT key pair if not exists
 func (s *AdminServer) initializeJWTKeyPair() error {
 	ctx := context.Background()
-
-	// Check if JWT private key exists in Redis
-	privateKeyPEM, err := s.redisClient.GetJWTPrivateKey(ctx)
+	privateKeyPEM, err := s.redisClient.GetJWTPrivateKeyForSigning(ctx)
 	if err == nil {
-		// Load existing key pair
-		return s.loadJWTKeyPair(privateKeyPEM)
+		return s.loadJWTKeyPairFromPEM(privateKeyPEM)
 	}
-
-	// Generate new key pair
 	return s.renewJWTKeyPair()
 }
 
-// renewJWTKeyPair generates a new JWT key pair
+// renewJWTKeyPair generates and stores new JWT key pair
 func (s *AdminServer) renewJWTKeyPair() error {
-	// Generate new RSA key pair
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	// Generate complete key pair in PEM format with timestamp - security module responsibility
+	keyPairPEM, err := s.cryptoManager.KeyGenerator.GenerateJWTKeyPairPEM(2048)
 	if err != nil {
-		return fmt.Errorf("failed to generate RSA key: %v", err)
+		return fmt.Errorf("failed to generate JWT key pair: %v", err)
 	}
 
-	s.jwtKeyPair = &JWTKeyPair{
-		PrivateKey: privateKey,
-		PublicKey:  &privateKey.PublicKey,
-	}
-
-	// Store private key in Redis
-	privateKeyPEM := s.privateKeyToPEM(privateKey)
+	// Store in Redis - pure storage, no crypto validation
 	ctx := context.Background()
-
-	if err := s.redisClient.SetJWTPrivateKey(ctx, privateKeyPEM); err != nil {
-		return fmt.Errorf("failed to store JWT private key: %v", err)
+	if err := s.redisClient.SetJWTKeyPairPEM(ctx, keyPairPEM.PrivateKeyPEM, keyPairPEM.PublicKeyPEM, keyPairPEM.GenerationTime); err != nil {
+		return fmt.Errorf("failed to store JWT key pair: %v", err)
 	}
 
-	// Store public key in Redis
-	publicKeyPEM, err := s.publicKeyToPEM(&privateKey.PublicKey)
-	if err != nil {
-		return fmt.Errorf("failed to convert public key to PEM: %v", err)
-	}
-
-	if err := s.redisClient.SetJWTPublicKey(ctx, publicKeyPEM); err != nil {
-		return fmt.Errorf("failed to store JWT public key: %v", err)
-	}
-
-	// Store generation timestamp in RFC3339 format
-	generationTime := time.Now().Format(time.RFC3339)
-	if err := s.redisClient.SetJWTKeyGenerationTime(ctx, generationTime); err != nil {
-		return fmt.Errorf("failed to store JWT key generation time: %v", err)
-	}
-
-	return nil
+	// Update in-memory keys for JWT operations - security module handles parsing
+	return s.loadJWTKeyPairFromPEM(keyPairPEM.PrivateKeyPEM)
 }
 
 // loadJWTKeyPair loads JWT key pair from PEM
 func (s *AdminServer) loadJWTKeyPair(privateKeyPEM string) error {
-	block, _ := pem.Decode([]byte(privateKeyPEM))
-	if block == nil {
-		return fmt.Errorf("failed to decode PEM block")
-	}
+	return s.loadJWTKeyPairFromPEM(privateKeyPEM)
+}
 
-	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+// loadJWTKeyPairFromPEM loads keys into memory for JWT signing
+func (s *AdminServer) loadJWTKeyPairFromPEM(privateKeyPEM string) error {
+	privateKey, err := s.cryptoManager.KeyParser.ParseJWTPrivateKeyForSigning(privateKeyPEM)
 	if err != nil {
 		return fmt.Errorf("failed to parse private key: %v", err)
 	}
@@ -271,7 +252,6 @@ func (s *AdminServer) loadJWTKeyPair(privateKeyPEM string) error {
 		PrivateKey: privateKey,
 		PublicKey:  &privateKey.PublicKey,
 	}
-
 	return nil
 }
 
@@ -291,32 +271,11 @@ func (s *AdminServer) GetJWTPublicKey() *rsa.PublicKey {
 	return s.jwtKeyPair.PublicKey
 }
 
-// getJWTPublicKeyPEM returns the JWT public key in PEM format
+// getJWTPublicKeyPEM returns public key PEM for export (no conversion needed)
 func (s *AdminServer) getJWTPublicKeyPEM() (string, error) {
 	ctx := context.Background()
-
-	// Try to get public key from Redis first
-	publicKeyPEM, err := s.redisClient.GetJWTPublicKey(ctx)
-	if err == nil {
-		return publicKeyPEM, nil
-	}
-
-	// Fallback to in-memory key pair if Redis doesn't have it
-	if s.jwtKeyPair == nil {
-		return "", fmt.Errorf("JWT key pair not initialized and not found in Redis")
-	}
-
-	publicKeyDER, err := x509.MarshalPKIXPublicKey(s.jwtKeyPair.PublicKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal public key: %v", err)
-	}
-
-	block := &pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: publicKeyDER,
-	}
-
-	return string(pem.EncodeToMemory(block)), nil
+	publicKeyPEM, _, err := s.redisClient.GetJWTPublicKeyInfo(ctx)
+	return publicKeyPEM, err
 }
 
 // GetJWTPublicKeyPEM returns the JWT public key in PEM format (public method)
@@ -324,31 +283,9 @@ func (s *AdminServer) GetJWTPublicKeyPEM() (string, error) {
 	return s.getJWTPublicKeyPEM()
 }
 
-// GetJWTKeyGenerationTime returns the JWT key generation timestamp
+// GetJWTKeyGenerationTime returns generation timestamp
 func (s *AdminServer) GetJWTKeyGenerationTime() (string, error) {
 	ctx := context.Background()
-	return s.redisClient.GetJWTKeyGenerationTime(ctx)
-}
-
-// privateKeyToPEM converts private key to PEM format
-func (s *AdminServer) privateKeyToPEM(key *rsa.PrivateKey) string {
-	block := &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(key),
-	}
-	return string(pem.EncodeToMemory(block))
-}
-
-// publicKeyToPEM converts public key to PEM format
-func (s *AdminServer) publicKeyToPEM(key *rsa.PublicKey) (string, error) {
-	publicKeyBytes, err := x509.MarshalPKIXPublicKey(key)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal public key: %v", err)
-	}
-
-	block := &pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: publicKeyBytes,
-	}
-	return string(pem.EncodeToMemory(block)), nil
+	_, generationTime, err := s.redisClient.GetJWTPublicKeyInfo(ctx)
+	return generationTime, err
 }
