@@ -236,11 +236,6 @@ func (s *AdminServer) renewJWTKeyPair() error {
 	return s.loadJWTKeyPairFromPEM(keyPairPEM.PrivateKeyPEM)
 }
 
-// loadJWTKeyPair loads JWT key pair from PEM
-func (s *AdminServer) loadJWTKeyPair(privateKeyPEM string) error {
-	return s.loadJWTKeyPairFromPEM(privateKeyPEM)
-}
-
 // loadJWTKeyPairFromPEM loads keys into memory for JWT signing
 func (s *AdminServer) loadJWTKeyPairFromPEM(privateKeyPEM string) error {
 	privateKey, err := s.cryptoManager.KeyParser.ParseJWTPrivateKeyForSigning(privateKeyPEM)
