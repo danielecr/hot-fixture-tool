@@ -13,11 +13,7 @@ package redisclient
 
 import (
 	"context"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
-	"strings"
 	"time"
 
 	"hfitd/config"
@@ -44,43 +40,14 @@ func NewClient(cfg config.RedisConfig) (*Client, error) {
 		return nil, fmt.Errorf("failed to connect to Redis: %v", err)
 	}
 
-	return &Client{rdb: rdb}, nil
+	return &Client{
+		rdb: rdb,
+	}, nil
 }
 
 // Close closes the Redis connection
 func (c *Client) Close() error {
 	return c.rdb.Close()
-}
-
-// GetUserPublicKey retrieves the public key for a user
-func (c *Client) GetUserPublicKey(ctx context.Context, userEmail string) (*rsa.PublicKey, error) {
-	keyName := fmt.Sprintf("user__%s", userEmail)
-
-	publicKeyPEM, err := c.rdb.Get(ctx, keyName).Result()
-	if err != nil {
-		if err == redis.Nil {
-			return nil, fmt.Errorf("public key not found for user: %s", userEmail)
-		}
-		return nil, fmt.Errorf("failed to get public key from Redis: %v", err)
-	}
-
-	// Parse the PEM public key
-	block, _ := pem.Decode([]byte(publicKeyPEM))
-	if block == nil {
-		return nil, fmt.Errorf("failed to parse PEM block for user: %s", userEmail)
-	}
-
-	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key for user %s: %v", userEmail, err)
-	}
-
-	rsaPublicKey, ok := publicKey.(*rsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("public key is not RSA for user: %s", userEmail)
-	}
-
-	return rsaPublicKey, nil
 }
 
 // GetUserPublicKeyString retrieves the raw public key string for a user (supports multiple formats)
@@ -98,66 +65,12 @@ func (c *Client) GetUserPublicKeyString(ctx context.Context, userEmail string) (
 	return publicKeyStr, nil
 }
 
-// SetUserPublicKey stores a public key for a user
+// SetUserPublicKey stores a public key for a user (validation should be done by caller)
 func (c *Client) SetUserPublicKey(ctx context.Context, userEmail, publicKey string) error {
 	keyName := fmt.Sprintf("user__%s", userEmail)
 
-	// Detect and validate the public key format
-	if err := validatePublicKey(publicKey); err != nil {
-		return fmt.Errorf("invalid public key for user %s: %v", userEmail, err)
-	}
-
-	// Store the key as-is, maintaining the original format
+	// Redis is pure storage - no validation here
 	return c.rdb.Set(ctx, keyName, publicKey, 0).Err()
-}
-
-// validatePublicKey validates both PEM and OpenSSH format public keys
-func validatePublicKey(publicKey string) error {
-	publicKey = strings.TrimSpace(publicKey)
-
-	// Check if it's PEM format
-	if strings.Contains(publicKey, "-----BEGIN") {
-		block, _ := pem.Decode([]byte(publicKey))
-		if block == nil {
-			return fmt.Errorf("invalid PEM format")
-		}
-		_, err := x509.ParsePKIXPublicKey(block.Bytes)
-		if err != nil {
-			return fmt.Errorf("invalid PEM public key: %v", err)
-		}
-		return nil
-	}
-
-	// Check if it's OpenSSH format (algorithm + base64 + optional comment)
-	parts := strings.Fields(publicKey)
-	if len(parts) < 2 {
-		return fmt.Errorf("invalid key format: expected PEM or OpenSSH format")
-	}
-
-	algorithm := parts[0]
-	supportedAlgorithms := []string{
-		"ssh-rsa",
-		"ssh-ed25519",
-		"ecdsa-sha2-nistp256",
-		"ecdsa-sha2-nistp384",
-		"ecdsa-sha2-nistp521",
-	}
-
-	algorithmSupported := false
-	for _, supported := range supportedAlgorithms {
-		if algorithm == supported {
-			algorithmSupported = true
-			break
-		}
-	}
-
-	if !algorithmSupported {
-		return fmt.Errorf("unsupported key algorithm: %s", algorithm)
-	}
-
-	// The key appears to be in valid OpenSSH format
-	// We could add more validation here if needed (e.g., base64 decoding)
-	return nil
 }
 
 // DeleteUserPublicKey removes a user's public key
@@ -233,6 +146,40 @@ func (c *Client) GetJWTKeyGenerationTime(ctx context.Context) (string, error) {
 // SetJWTKeyGenerationTime stores the JWT key generation timestamp
 func (c *Client) SetJWTKeyGenerationTime(ctx context.Context, timestamp string) error {
 	return c.rdb.Set(ctx, "jwt_key_generation_time", timestamp, 0).Err()
+}
+
+// SetJWTKeyPairPEM stores JWT key pair data (private key, public key, generation time)
+func (c *Client) SetJWTKeyPairPEM(ctx context.Context, privateKeyPEM, publicKeyPEM, generationTime string) error {
+	pipe := c.rdb.Pipeline()
+	pipe.Set(ctx, "jwt_private_key", privateKeyPEM, 0)
+	pipe.Set(ctx, "jwt_public_key", publicKeyPEM, 0)
+	pipe.Set(ctx, "jwt_key_generation_time", generationTime, 0)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// GetJWTPublicKeyInfo returns public key PEM and generation time for info/export
+func (c *Client) GetJWTPublicKeyInfo(ctx context.Context) (publicKeyPEM, generationTime string, err error) {
+	pipe := c.rdb.Pipeline()
+	pubKeyCmd := pipe.Get(ctx, "jwt_public_key")
+	genTimeCmd := pipe.Get(ctx, "jwt_key_generation_time")
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return "", "", err
+	}
+
+	publicKeyPEM, err = pubKeyCmd.Result()
+	if err != nil {
+		return "", "", err
+	}
+
+	generationTime, err = genTimeCmd.Result()
+	return publicKeyPEM, generationTime, err
+}
+
+// GetJWTPrivateKeyForSigning returns private key PEM for JWT signing operations
+func (c *Client) GetJWTPrivateKeyForSigning(ctx context.Context) (string, error) {
+	return c.rdb.Get(ctx, "jwt_private_key").Result()
 }
 
 // Set stores a key-value pair in Redis

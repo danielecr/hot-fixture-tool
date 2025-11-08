@@ -39,12 +39,12 @@ import (
 
 	_ "hfitd/docs" // Import swagger docs
 
-	"hfitd/admin"
 	"hfitd/auth"
 	"hfitd/config"
 	"hfitd/db"
 	"hfitd/dbapi"
 	"hfitd/fileapi"
+	"hfitd/jwtkeyutils"
 	redisclient "hfitd/redis"
 	"hfitd/templateapi"
 
@@ -67,7 +67,7 @@ API:
 /*
 * NewHandler creates a new HTTP handler for the API.
  */
-func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminServer *admin.AdminServer) (http.Handler, error) {
+func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, jwtKeyManager *jwtkeyutils.JwtData) (http.Handler, error) {
 	router := mux.NewRouter()
 
 	// Initialize Redis client
@@ -77,14 +77,14 @@ func NewHandler(databaseManager *db.DatabaseManager, cfg *config.Config, adminSe
 	}
 
 	// Initialize authentication manager
-	authManager, err := auth.NewAuthManager(redisClient, adminServer)
+	authManager, err := auth.NewAuthManager(redisClient, jwtKeyManager)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize auth manager: %w", err)
 	}
 
 	// Well-known JWT public key endpoint (RFC 7517 style)
 	router.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
-		handleJWKS(w, r, adminServer)
+		handleJWKS(w, r, jwtKeyManager)
 	}).Methods("GET")
 
 	// Authentication routes (unprotected)
@@ -169,8 +169,8 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 //	@Success		200		{object}	object	"JWKS with public keys"
 //	@Failure		500		{object}	map[string]string	"Internal server error"
 //	@Router			/.well-known/jwks.json [get]
-func handleJWKS(w http.ResponseWriter, r *http.Request, adminServer *admin.AdminServer) {
-	jwtPublicKeyPEM, err := adminServer.GetJWTPublicKeyPEM()
+func handleJWKS(w http.ResponseWriter, r *http.Request, jwtKeyManager *jwtkeyutils.JwtData) {
+	jwtPublicKeyPEM, err := jwtKeyManager.GetJWTPublicKeyPEM()
 	if err != nil {
 		http.Error(w, "JWT public key not available", http.StatusInternalServerError)
 		return
