@@ -1,6 +1,12 @@
 package security
 
 import (
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
 )
 
@@ -67,5 +73,85 @@ func TestCryptoManager(t *testing.T) {
 	}
 	if len(challenge) != 16 {
 		t.Errorf("Expected 16-byte challenge, got %d bytes", len(challenge))
+	}
+}
+
+func TestSignatureVerifierEd25519(t *testing.T) {
+	sv := NewSignatureVerifier()
+
+	// generate a key pair for testing
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("Failed to generate Ed25519 key pair: %v", err)
+	}
+
+	message := []byte("test message")
+	signature := ed25519.Sign(privateKey, message)
+
+	// Test valid signature
+	err = sv.verifyOpenSSHEd25519Signature(string(publicKey), message, signature)
+	if err != nil {
+		t.Errorf("Valid signature verification failed: %v", err)
+	}
+
+	// Test invalid signature
+	invalidSignature := make([]byte, len(signature))
+	copy(invalidSignature, signature)
+	invalidSignature[0] ^= 0xFF // Corrupt the signature
+
+	err = sv.verifyOpenSSHEd25519Signature(string(publicKey), message, invalidSignature)
+	if err == nil {
+		t.Error("Invalid signature verification should have failed but passed")
+	}
+
+}
+
+func TestSignatureVerifierECDSA(t *testing.T) {
+	sv := NewSignatureVerifier()
+
+	// Generate ECDSA key pair for testing
+	ecdsaPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate ECDSA key pair: %v", err)
+	}
+
+	// Convert public key to PEM format manually
+	pubKeyBytes, err := x509.MarshalPKIXPublicKey(&ecdsaPrivateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("Failed to marshal ECDSA public key: %v", err)
+	}
+
+	pubKeyPEM := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: pubKeyBytes,
+	}
+	ecdsaPublicKeyPEM := string(pem.EncodeToMemory(pubKeyPEM))
+
+	message := []byte("test message")
+
+	// Hash the message with SHA256 (required for ECDSA)
+	hashGen := NewHashGenerator()
+	messageHash := hashGen.SHA256(message)
+
+	// Sign the hash (convert [32]byte to []byte)
+	signature, err := ecdsa.SignASN1(rand.Reader, ecdsaPrivateKey, messageHash[:])
+	if err != nil {
+		t.Fatalf("Failed to sign message: %v", err)
+	}
+
+	// Test valid signature verification
+	err = sv.VerifySignature(ecdsaPublicKeyPEM, message, signature)
+	if err != nil {
+		t.Errorf("Valid ECDSA signature verification failed: %v", err)
+	}
+
+	// Test invalid signature
+	invalidSignature := make([]byte, len(signature))
+	copy(invalidSignature, signature)
+	invalidSignature[0] ^= 0xFF // Corrupt the signature
+
+	err = sv.VerifySignature(ecdsaPublicKeyPEM, message, invalidSignature)
+	if err == nil {
+		t.Error("Invalid ECDSA signature verification should have failed but passed")
 	}
 }

@@ -1,6 +1,3 @@
-[submodule "hfit-sellpoint"]
-	path = hfit-sellpoint
-	url = git@github.com:danielecr/hfit-sellpoint.git
 [submodule "hfit-doc"]
 	path = hfit-doc
 	url = git@github.com:danielecr/hfit-doc.git
