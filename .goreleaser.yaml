@@ -213,12 +213,15 @@ chocolateys:
 
 # Scoop package for Windows developer tools
 scoops:
-  - repository:
+  - ids: [hfit-package]
+    repository:
       owner: danielecr
       name: scoop-bucket
     description: "Hot Fixture Tool Client - Database fixture testing"
     license: MIT
     homepage: https://github.com/danielecr/hot-fixture-tool
+    goamd64: v1
+    goarch: amd64
 
 release:
   github:
