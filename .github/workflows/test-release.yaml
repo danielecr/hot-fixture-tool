@@ -14,8 +14,11 @@ on:
         - dry-run
 
 jobs:
-  test-goreleaser:
-    runs-on: ubuntu-latest
+  test-release:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
       packages: read
@@ -36,23 +39,39 @@ jobs:
       with:
         install-only: true
 
-    - name: Install Chocolatey CLI  
+    - name: Install Chocolatey CLI (Windows only)
+      if: runner.os == 'Windows'
       run: |
-        # Install chocolatey using the official installer adapted for Linux/CI
-        sudo apt-get update && sudo apt-get install -y mono-complete
-        curl -s https://api.nuget.org/v3-flatcontainer/chocolatey/0.12.1/chocolatey.0.12.1.nupkg -o /tmp/choco.nupkg
-        sudo mkdir -p /opt/chocolatey && cd /opt/chocolatey
-        sudo unzip -q /tmp/choco.nupkg
-        sudo chmod +x tools/chocolateyInstall/choco.exe
-        echo '#!/bin/bash' | sudo tee /usr/local/bin/choco > /dev/null
-        echo 'exec mono /opt/chocolatey/tools/chocolateyInstall/choco.exe "$@"' | sudo tee -a /usr/local/bin/choco > /dev/null
-        sudo chmod +x /usr/local/bin/choco
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+        iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+      shell: powershell
 
-    - name: Test GoReleaser - Snapshot
-      if: ${{ github.event.inputs.test_type == 'snapshot' }}
-      run: goreleaser release --snapshot --clean --skip=sign,sbom
+    # Set up Docker Buildx and QEMU for multi-arch builds (Linux only)
+    - name: Set up Docker Buildx
+      if: runner.os == 'Linux'
+      uses: docker/setup-buildx-action@v3
+
+    - name: Set up QEMU
+      if: runner.os == 'Linux'
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: all
+
+
+    - name: Test GoReleaser - Snapshot (Linux - with multi-arch Docker)
+      if: ${{ github.event.inputs.test_type == 'snapshot' && runner.os == 'Linux' }}
+      run: goreleaser release --snapshot --clean --skip=sign,sbom,chocolatey
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_USER: danielecr
+
+    - name: Test GoReleaser - Snapshot (Windows - Chocolatey only)
+      if: ${{ github.event.inputs.test_type == 'snapshot' && runner.os == 'Windows' }}
+      run: goreleaser release --snapshot --clean --skip=sign,sbom,scoop,docker,nfpm
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_USER: danielecr
         CHOCOLATEY_API_KEY: "dummy-key-for-testing"
 
     - name: Test GoReleaser - Build Only
@@ -72,11 +91,20 @@ jobs:
       run: |
         echo "Generated artifacts:"
         ls -la dist/ || echo "No dist directory found"
-        
-    - name: Upload test artifacts
-      if: ${{ github.event.inputs.test_type == 'snapshot' }}
+      shell: bash
+
+    - name: Upload test artifacts (Linux)
+      if: ${{ github.event.inputs.test_type == 'snapshot' && runner.os == 'Linux' }}
       uses: actions/upload-artifact@v4
       with:
-        name: test-release-artifacts
+        name: test-release-artifacts-linux
+        path: dist/
+        retention-days: 1
+
+    - name: Upload test artifacts (Windows)
+      if: ${{ github.event.inputs.test_type == 'snapshot' && runner.os == 'Windows' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-release-artifacts-windows
         path: dist/
         retention-days: 1

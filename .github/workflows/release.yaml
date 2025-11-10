@@ -13,7 +13,10 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,13 +45,15 @@ jobs:
         with:
           go-version: '1.23'
 
-      - name: Set up QEMU
+      - name: Set up QEMU (Linux only)
+        if: runner.os == 'Linux'
         uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
         with:
-          platforms: linux/amd64,linux/arm64
+          platforms: all
+
+      - name: Set up Docker Buildx (Linux only)
+        if: runner.os == 'Linux'
+        uses: docker/setup-buildx-action@v3
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.4.0
@@ -56,44 +61,55 @@ jobs:
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@v0.20.9
 
-      - name: Install Chocolatey CLI  
+      - name: Install Chocolatey CLI (Windows only)
+        if: runner.os == 'Windows'
         run: |
-          # Install chocolatey using the official installer adapted for Linux/CI
-          sudo apt-get update && sudo apt-get install -y mono-complete
-          curl -s https://api.nuget.org/v3-flatcontainer/chocolatey/0.12.1/chocolatey.0.12.1.nupkg -o /tmp/choco.nupkg
-          sudo mkdir -p /opt/chocolatey && cd /opt/chocolatey
-          sudo unzip -q /tmp/choco.nupkg
-          sudo chmod +x tools/chocolateyInstall/choco.exe
-          echo '#!/bin/bash' | sudo tee /usr/local/bin/choco > /dev/null
-          echo 'exec mono /opt/chocolatey/tools/chocolateyInstall/choco.exe "$@"' | sudo tee -a /usr/local/bin/choco > /dev/null
-          sudo chmod +x /usr/local/bin/choco
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+        shell: powershell
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to GitHub Container Registry (Linux only)
+        if: runner.os == 'Linux'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Debug Docker info
+      - name: Debug Docker info (Linux only)
+        if: runner.os == 'Linux'
         run: |
           echo "Repository owner: ${{ github.repository_owner }}"
           echo "GitHub actor: ${{ github.actor }}"
           echo "Repository: ${{ github.repository }}"
           docker info
           
-      - name: Build and release
+      - name: Build and release (Linux - with multi-arch Docker)
+        if: runner.os == 'Linux'
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean
+          args: release --clean --skip=chocolatey
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_USER: danielecr
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+
+      - name: Build and release (Windows - Chocolatey only)
+        if: runner.os == 'Windows'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean --skip=scoops,dockers_v2,nfpms,archives,signs,sboms
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USER: danielecr
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
 
-      - name: Generate build provenance
+      - name: Generate build provenance (Linux only)
+        if: runner.os == 'Linux'
         uses: actions/attest-build-provenance@v1
         with:
           subject-path: './dist/checksums.txt'
