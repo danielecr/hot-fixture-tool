@@ -199,7 +199,7 @@ changelog:
 # Optional: Chocolatey for developer convenience  
 chocolateys:
   - name: hfit
-    ids: [client]
+    ids: [hfit-package]
     title: Hot Fixture Tool Client  
     authors: Daniele Cruciani
     summary: Command-line client for database fixture testing
