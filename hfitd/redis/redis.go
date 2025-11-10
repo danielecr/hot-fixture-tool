@@ -67,7 +67,7 @@ func (c *Client) extractUserEmail(key string) string {
 }
 
 // GetUserPublicKey retrieves the public key for a user by email
-func (c *Client) GetUserPublicKeyString(ctx context.Context, userEmail string) (string, error) {
+func (c *Client) GetUserPublicKey(ctx context.Context, userEmail string) (string, error) {
 	keyName := c.buildKey(fmt.Sprintf("user__%s", userEmail))
 
 	publicKeyStr, err := c.rdb.Get(ctx, keyName).Result()

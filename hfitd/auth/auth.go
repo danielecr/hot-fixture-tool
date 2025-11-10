@@ -150,7 +150,7 @@ func (am *AuthManager) Authenticate(w http.ResponseWriter, r *http.Request) {
 
 	// Get user's public key string from Redis
 	ctx := context.Background()
-	publicKeyStr, err := am.redisClient.GetUserPublicKeyString(ctx, req.Username)
+	publicKeyStr, err := am.redisClient.GetUserPublicKey(ctx, req.Username)
 	if err != nil {
 		http.Error(w, "User not found or invalid", http.StatusUnauthorized)
 		return
