@@ -14,7 +14,6 @@ package redisclient
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"hfitd/config"
 
@@ -50,6 +49,20 @@ func NewClient(cfg config.RedisConfig) (*Client, error) {
 // Close closes the Redis connection
 func (c *Client) Close() error {
 	return c.rdb.Close()
+}
+
+// CheckConnection tests Redis connectivity by performing a simple get operation
+func (c *Client) CheckConnection(ctx context.Context) error {
+	// Try a simple get operation on a test key with prefix
+	testKey := c.buildKey("connection_test")
+	_, err := c.rdb.Get(ctx, testKey).Result()
+
+	// If the error is "redis: nil" (key doesn't exist), that's actually a successful connection
+	if err != nil && err.Error() != "redis: nil" {
+		return err
+	}
+
+	return nil
 }
 
 // buildKey builds a Redis key with the configured prefix
@@ -170,33 +183,68 @@ func (c *Client) GetJWTPrivateKeyForSigning(ctx context.Context) (string, error)
 	return c.rdb.Get(ctx, c.buildKey("jwt_private_key")).Result()
 }
 
-// Set stores a key-value pair in Redis
-func (c *Client) Set(ctx context.Context, key, value string, expiration time.Duration) error {
-	return c.rdb.Set(ctx, key, value, expiration).Err()
+// Template Storage Methods
+
+// TmplSetTemplate stores a template YAML content
+func (c *Client) TmplSetTemplate(ctx context.Context, userEmail, templateName, yamlContent string) error {
+	templateKey := c.buildKey(fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName))
+	return c.rdb.Set(ctx, templateKey, yamlContent, 0).Err()
 }
 
-// Get retrieves a value from Redis by key
-func (c *Client) Get(ctx context.Context, key string) (string, error) {
-	result, err := c.rdb.Get(ctx, key).Result()
+// TmplGetTemplate retrieves a template YAML content
+func (c *Client) TmplGetTemplate(ctx context.Context, userEmail, templateName string) (string, error) {
+	templateKey := c.buildKey(fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName))
+	return c.rdb.Get(ctx, templateKey).Result()
+}
+
+// TmplDelTemplate deletes a template
+func (c *Client) TmplDelTemplate(ctx context.Context, userEmail, templateName string) error {
+	templateKey := c.buildKey(fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName))
+	return c.rdb.Del(ctx, templateKey).Err()
+}
+
+// TmplExistsTemplate checks if a template exists
+func (c *Client) TmplExistsTemplate(ctx context.Context, userEmail, templateName string) (bool, error) {
+	templateKey := c.buildKey(fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName))
+	count, err := c.rdb.Exists(ctx, templateKey).Result()
 	if err != nil {
-		if err == redis.Nil {
-			return "", fmt.Errorf("key not found: %s", key)
-		}
-		return "", fmt.Errorf("failed to get key %s from Redis: %v", key, err)
-	}
-	return result, nil
-}
-
-// Del deletes one or more keys from Redis
-func (c *Client) Del(ctx context.Context, keys ...string) error {
-	return c.rdb.Del(ctx, keys...).Err()
-}
-
-// Exists checks if a key exists in Redis
-func (c *Client) Exists(ctx context.Context, key string) (bool, error) {
-	count, err := c.rdb.Exists(ctx, key).Result()
-	if err != nil {
-		return false, fmt.Errorf("failed to check key existence %s: %v", key, err)
+		return false, err
 	}
 	return count > 0, nil
+}
+
+// TmplSetList stores a template list (JSON array of template names)
+func (c *Client) TmplSetList(ctx context.Context, userEmail, jsonData string) error {
+	listKey := c.buildKey(fmt.Sprintf("pkg_templatelst_%s", userEmail))
+	return c.rdb.Set(ctx, listKey, jsonData, 0).Err()
+}
+
+// TmplGetList retrieves a template list (JSON array of template names)
+func (c *Client) TmplGetList(ctx context.Context, userEmail string) (string, error) {
+	listKey := c.buildKey(fmt.Sprintf("pkg_templatelst_%s", userEmail))
+	return c.rdb.Get(ctx, listKey).Result()
+}
+
+// TmplSetLog stores download log (JSON array of timestamps)
+func (c *Client) TmplSetLog(ctx context.Context, userEmail, templateName, jsonData string) error {
+	logKey := c.buildKey(fmt.Sprintf("%s_pkg_%s_dwnld", userEmail, templateName))
+	return c.rdb.Set(ctx, logKey, jsonData, 0).Err()
+}
+
+// TmplGetLog retrieves download log (JSON array of timestamps)
+func (c *Client) TmplGetLog(ctx context.Context, userEmail, templateName string) (string, error) {
+	logKey := c.buildKey(fmt.Sprintf("%s_pkg_%s_dwnld", userEmail, templateName))
+	return c.rdb.Get(ctx, logKey).Result()
+}
+
+// TmplGetMetadata retrieves download metadata by timestamp
+func (c *Client) TmplGetMetadata(ctx context.Context, userEmail, templateName string, timestamp int64) (string, error) {
+	metadataKey := c.buildKey(fmt.Sprintf("%s_pkg_%s_dwnld_%d", userEmail, templateName, timestamp))
+	return c.rdb.Get(ctx, metadataKey).Result()
+}
+
+// TmplSetMetadataWithTimestamp stores download metadata with a specific timestamp
+func (c *Client) TmplSetMetadataWithTimestamp(ctx context.Context, userEmail, templateName string, timestamp int64, jsonData string) error {
+	metadataKey := c.buildKey(fmt.Sprintf("%s_pkg_%s_dwnld_%d", userEmail, templateName, timestamp))
+	return c.rdb.Set(ctx, metadataKey, jsonData, 0).Err()
 }
