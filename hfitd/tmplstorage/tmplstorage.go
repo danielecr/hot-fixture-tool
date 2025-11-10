@@ -152,7 +152,7 @@ func (ts *TemplateStorage) StoreDownloadMetadata(ctx context.Context, userEmail,
 		return fmt.Errorf("failed to marshal metadata: %v", err)
 	}
 
-	if err := ts.redisClient.TmplSetMetadataWithTimestamp(ctx, userEmail, templateName, timestamp, string(jsonData)); err != nil {
+	if err := ts.redisClient.TmplSetMetadata(ctx, userEmail, templateName, timestamp, string(jsonData)); err != nil {
 		return fmt.Errorf("failed to store download metadata: %v", err)
 	}
 

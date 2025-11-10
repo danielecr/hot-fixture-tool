@@ -243,8 +243,8 @@ func (c *Client) TmplGetMetadata(ctx context.Context, userEmail, templateName st
 	return c.rdb.Get(ctx, metadataKey).Result()
 }
 
-// TmplSetMetadataWithTimestamp stores download metadata with a specific timestamp
-func (c *Client) TmplSetMetadataWithTimestamp(ctx context.Context, userEmail, templateName string, timestamp int64, jsonData string) error {
+// TmplSetMetadata stores download metadata with a specific timestamp
+func (c *Client) TmplSetMetadata(ctx context.Context, userEmail, templateName string, timestamp int64, jsonData string) error {
 	metadataKey := c.buildKey(fmt.Sprintf("%s_pkg_%s_dwnld_%d", userEmail, templateName, timestamp))
 	return c.rdb.Set(ctx, metadataKey, jsonData, 0).Err()
 }
