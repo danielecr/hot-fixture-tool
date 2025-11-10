@@ -1,0 +1,70 @@
+name: Test Release Configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of test to run'
+        required: true
+        default: 'snapshot'
+        type: choice
+        options:
+        - snapshot
+        - build-only
+        - dry-run
+
+jobs:
+  test-goreleaser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Install GoReleaser
+      uses: goreleaser/goreleaser-action@v6
+      with:
+        install-only: true
+
+    - name: Test GoReleaser - Snapshot
+      if: ${{ github.event.inputs.test_type == 'snapshot' }}
+      run: goreleaser release --snapshot --clean
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CHOCOLATEY_API_KEY: "dummy-key-for-testing"
+
+    - name: Test GoReleaser - Build Only
+      if: ${{ github.event.inputs.test_type == 'build-only' }}
+      run: goreleaser build --clean
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Test GoReleaser - Dry Run
+      if: ${{ github.event.inputs.test_type == 'dry-run' }}
+      run: goreleaser check
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: List generated artifacts (if any)
+      if: ${{ github.event.inputs.test_type == 'snapshot' || github.event.inputs.test_type == 'build-only' }}
+      run: |
+        echo "Generated artifacts:"
+        ls -la dist/ || echo "No dist directory found"
+        
+    - name: Upload test artifacts
+      if: ${{ github.event.inputs.test_type == 'snapshot' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-release-artifacts
+        path: dist/
+        retention-days: 1
