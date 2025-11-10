@@ -79,6 +79,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USER: danielecr
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
 
       - name: Generate build provenance
         uses: actions/attest-build-provenance@v1
