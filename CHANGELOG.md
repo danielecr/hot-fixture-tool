@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.19] - 2025-11-10
+
+### 🚀 Features
+
+- Verify ed25515 signature
+
+### 🚜 Refactor
+
+- GetUserPublicKey func name
+- Redis key prefix for templatestorage
+- Rename
+
+### Clean
+
+- Hfit client remove unused
+
 ## [0.9.18] - 2025-11-08
 
 ### 🚀 Features
