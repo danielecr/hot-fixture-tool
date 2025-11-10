@@ -36,6 +36,9 @@ jobs:
       with:
         install-only: true
 
+    - name: Install syft
+      uses: anchore/sbom-action/download-syft@v0
+
     - name: Test GoReleaser - Snapshot
       if: ${{ github.event.inputs.test_type == 'snapshot' }}
       run: goreleaser release --snapshot --clean
