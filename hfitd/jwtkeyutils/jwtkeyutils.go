@@ -112,10 +112,3 @@ func (j *JwtData) getJWTPublicKeyPEM() (string, error) {
 func (j *JwtData) GetJWTPublicKeyPEM() (string, error) {
 	return j.getJWTPublicKeyPEM()
 }
-
-// GetJWTKeyGenerationTime returns generation timestamp
-func (j *JwtData) GetJWTKeyGenerationTime() (string, error) {
-	ctx := context.Background()
-	_, generationTime, err := j.redisClient.GetJWTPublicKeyInfo(ctx)
-	return generationTime, err
-}
