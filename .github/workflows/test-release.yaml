@@ -36,7 +36,17 @@ jobs:
       with:
         install-only: true
 
-
+    - name: Install Chocolatey CLI  
+      run: |
+        # Install chocolatey using the official installer adapted for Linux/CI
+        sudo apt-get update && sudo apt-get install -y mono-complete
+        curl -s https://api.nuget.org/v3-flatcontainer/chocolatey/0.12.1/chocolatey.0.12.1.nupkg -o /tmp/choco.nupkg
+        sudo mkdir -p /opt/chocolatey && cd /opt/chocolatey
+        sudo unzip -q /tmp/choco.nupkg
+        sudo chmod +x tools/chocolateyInstall/choco.exe
+        echo '#!/bin/bash' | sudo tee /usr/local/bin/choco > /dev/null
+        echo 'exec mono /opt/chocolatey/tools/chocolateyInstall/choco.exe "$@"' | sudo tee -a /usr/local/bin/choco > /dev/null
+        sudo chmod +x /usr/local/bin/choco
 
     - name: Test GoReleaser - Snapshot
       if: ${{ github.event.inputs.test_type == 'snapshot' }}
