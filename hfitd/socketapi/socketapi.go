@@ -165,9 +165,9 @@ func (s *SocketServer) executeCommand(cmd Command) Response {
 func (s *SocketServer) handleStatus() Response {
 	ctx := context.Background()
 
-	// Check Redis connection (try a simple get operation)
+	// Check Redis connection
 	redisStatus := "connected"
-	if _, err := s.redisClient.Get(ctx, "test_connection"); err != nil && err.Error() != "redis: nil" {
+	if err := s.redisClient.CheckConnection(ctx); err != nil {
 		redisStatus = fmt.Sprintf("error: %v", err)
 	}
 

@@ -14,7 +14,6 @@ package redisclient
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"hfitd/config"
 
@@ -22,7 +21,8 @@ import (
 )
 
 type Client struct {
-	rdb *redis.Client
+	rdb    *redis.Client
+	prefix string
 }
 
 // NewClient creates a new Redis client
@@ -41,7 +41,8 @@ func NewClient(cfg config.RedisConfig) (*Client, error) {
 	}
 
 	return &Client{
-		rdb: rdb,
+		rdb:    rdb,
+		prefix: cfg.Prefix,
 	}, nil
 }
 
@@ -50,9 +51,37 @@ func (c *Client) Close() error {
 	return c.rdb.Close()
 }
 
-// GetUserPublicKeyString retrieves the raw public key string for a user (supports multiple formats)
-func (c *Client) GetUserPublicKeyString(ctx context.Context, userEmail string) (string, error) {
-	keyName := fmt.Sprintf("user__%s", userEmail)
+// CheckConnection tests Redis connectivity by performing a simple get operation
+func (c *Client) CheckConnection(ctx context.Context) error {
+	// Try a simple get operation on a test key with prefix
+	testKey := c.buildKey("connection_test")
+	_, err := c.rdb.Get(ctx, testKey).Result()
+
+	// If the error is "redis: nil" (key doesn't exist), that's actually a successful connection
+	if err != nil && err.Error() != "redis: nil" {
+		return err
+	}
+
+	return nil
+}
+
+// buildKey builds a Redis key with the configured prefix
+func (c *Client) buildKey(key string) string {
+	return c.prefix + key
+}
+
+// extractUserEmail extracts email from a prefixed user key
+func (c *Client) extractUserEmail(key string) string {
+	userPrefix := c.prefix + "user__"
+	if len(key) > len(userPrefix) {
+		return key[len(userPrefix):]
+	}
+	return ""
+}
+
+// GetUserPublicKey retrieves the public key for a user by email
+func (c *Client) GetUserPublicKey(ctx context.Context, userEmail string) (string, error) {
+	keyName := c.buildKey(fmt.Sprintf("user__%s", userEmail))
 
 	publicKeyStr, err := c.rdb.Get(ctx, keyName).Result()
 	if err != nil {
@@ -65,32 +94,31 @@ func (c *Client) GetUserPublicKeyString(ctx context.Context, userEmail string) (
 	return publicKeyStr, nil
 }
 
-// SetUserPublicKey stores a public key for a user (validation should be done by caller)
+// SetUserPublicKey sets the public key for a user by email
 func (c *Client) SetUserPublicKey(ctx context.Context, userEmail, publicKey string) error {
-	keyName := fmt.Sprintf("user__%s", userEmail)
-
-	// Redis is pure storage - no validation here
+	keyName := c.buildKey(fmt.Sprintf("user__%s", userEmail))
 	return c.rdb.Set(ctx, keyName, publicKey, 0).Err()
 }
 
 // DeleteUserPublicKey removes a user's public key
 func (c *Client) DeleteUserPublicKey(ctx context.Context, userEmail string) error {
-	keyName := fmt.Sprintf("user__%s", userEmail)
+	keyName := c.buildKey(fmt.Sprintf("user__%s", userEmail))
 	return c.rdb.Del(ctx, keyName).Err()
 }
 
 // ListUsers returns all users who have public keys stored
 func (c *Client) ListUsers(ctx context.Context) ([]string, error) {
-	keys, err := c.rdb.Keys(ctx, "user__*").Result()
+	keys, err := c.rdb.Keys(ctx, c.buildKey("user__*")).Result()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user keys: %v", err)
 	}
 
 	users := make([]string, 0, len(keys))
 	for _, key := range keys {
-		// Extract email from key name (remove "user__" prefix)
-		if len(key) > 6 {
-			users = append(users, key[6:])
+		// Extract email from key name (remove prefix and "user__")
+		email := c.extractUserEmail(key)
+		if email != "" {
+			users = append(users, email)
 		}
 	}
 
@@ -99,7 +127,7 @@ func (c *Client) ListUsers(ctx context.Context) ([]string, error) {
 
 // GetJWTPrivateKey retrieves the JWT private key
 func (c *Client) GetJWTPrivateKey(ctx context.Context) (string, error) {
-	privateKeyPEM, err := c.rdb.Get(ctx, "jwt_private_key").Result()
+	privateKeyPEM, err := c.rdb.Get(ctx, c.buildKey("jwt_private_key")).Result()
 	if err != nil {
 		if err == redis.Nil {
 			return "", fmt.Errorf("JWT private key not found")
@@ -109,14 +137,9 @@ func (c *Client) GetJWTPrivateKey(ctx context.Context) (string, error) {
 	return privateKeyPEM, nil
 }
 
-// SetJWTPrivateKey stores the JWT private key
-func (c *Client) SetJWTPrivateKey(ctx context.Context, privateKeyPEM string) error {
-	return c.rdb.Set(ctx, "jwt_private_key", privateKeyPEM, 0).Err()
-}
-
 // GetJWTPublicKey retrieves the JWT public key
 func (c *Client) GetJWTPublicKey(ctx context.Context) (string, error) {
-	publicKeyPEM, err := c.rdb.Get(ctx, "jwt_public_key").Result()
+	publicKeyPEM, err := c.rdb.Get(ctx, c.buildKey("jwt_public_key")).Result()
 	if err != nil {
 		if err == redis.Nil {
 			return "", fmt.Errorf("JWT public key not found")
@@ -126,34 +149,12 @@ func (c *Client) GetJWTPublicKey(ctx context.Context) (string, error) {
 	return publicKeyPEM, nil
 }
 
-// SetJWTPublicKey stores the JWT public key
-func (c *Client) SetJWTPublicKey(ctx context.Context, publicKeyPEM string) error {
-	return c.rdb.Set(ctx, "jwt_public_key", publicKeyPEM, 0).Err()
-}
-
-// GetJWTKeyGenerationTime retrieves the JWT key generation timestamp
-func (c *Client) GetJWTKeyGenerationTime(ctx context.Context) (string, error) {
-	timestamp, err := c.rdb.Get(ctx, "jwt_key_generation_time").Result()
-	if err != nil {
-		if err == redis.Nil {
-			return "", fmt.Errorf("JWT key generation time not found")
-		}
-		return "", fmt.Errorf("failed to get JWT key generation time from Redis: %v", err)
-	}
-	return timestamp, nil
-}
-
-// SetJWTKeyGenerationTime stores the JWT key generation timestamp
-func (c *Client) SetJWTKeyGenerationTime(ctx context.Context, timestamp string) error {
-	return c.rdb.Set(ctx, "jwt_key_generation_time", timestamp, 0).Err()
-}
-
 // SetJWTKeyPairPEM stores JWT key pair data (private key, public key, generation time)
 func (c *Client) SetJWTKeyPairPEM(ctx context.Context, privateKeyPEM, publicKeyPEM, generationTime string) error {
 	pipe := c.rdb.Pipeline()
-	pipe.Set(ctx, "jwt_private_key", privateKeyPEM, 0)
-	pipe.Set(ctx, "jwt_public_key", publicKeyPEM, 0)
-	pipe.Set(ctx, "jwt_key_generation_time", generationTime, 0)
+	pipe.Set(ctx, c.buildKey("jwt_private_key"), privateKeyPEM, 0)
+	pipe.Set(ctx, c.buildKey("jwt_public_key"), publicKeyPEM, 0)
+	pipe.Set(ctx, c.buildKey("jwt_key_generation_time"), generationTime, 0)
 	_, err := pipe.Exec(ctx)
 	return err
 }
@@ -161,8 +162,8 @@ func (c *Client) SetJWTKeyPairPEM(ctx context.Context, privateKeyPEM, publicKeyP
 // GetJWTPublicKeyInfo returns public key PEM and generation time for info/export
 func (c *Client) GetJWTPublicKeyInfo(ctx context.Context) (publicKeyPEM, generationTime string, err error) {
 	pipe := c.rdb.Pipeline()
-	pubKeyCmd := pipe.Get(ctx, "jwt_public_key")
-	genTimeCmd := pipe.Get(ctx, "jwt_key_generation_time")
+	pubKeyCmd := pipe.Get(ctx, c.buildKey("jwt_public_key"))
+	genTimeCmd := pipe.Get(ctx, c.buildKey("jwt_key_generation_time"))
 	_, err = pipe.Exec(ctx)
 	if err != nil {
 		return "", "", err
@@ -179,36 +180,71 @@ func (c *Client) GetJWTPublicKeyInfo(ctx context.Context) (publicKeyPEM, generat
 
 // GetJWTPrivateKeyForSigning returns private key PEM for JWT signing operations
 func (c *Client) GetJWTPrivateKeyForSigning(ctx context.Context) (string, error) {
-	return c.rdb.Get(ctx, "jwt_private_key").Result()
+	return c.rdb.Get(ctx, c.buildKey("jwt_private_key")).Result()
 }
 
-// Set stores a key-value pair in Redis
-func (c *Client) Set(ctx context.Context, key, value string, expiration time.Duration) error {
-	return c.rdb.Set(ctx, key, value, expiration).Err()
+// Template Storage Methods
+
+// TmplSetTemplate stores a template YAML content
+func (c *Client) TmplSetTemplate(ctx context.Context, userEmail, templateName, yamlContent string) error {
+	templateKey := c.buildKey(fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName))
+	return c.rdb.Set(ctx, templateKey, yamlContent, 0).Err()
 }
 
-// Get retrieves a value from Redis by key
-func (c *Client) Get(ctx context.Context, key string) (string, error) {
-	result, err := c.rdb.Get(ctx, key).Result()
+// TmplGetTemplate retrieves a template YAML content
+func (c *Client) TmplGetTemplate(ctx context.Context, userEmail, templateName string) (string, error) {
+	templateKey := c.buildKey(fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName))
+	return c.rdb.Get(ctx, templateKey).Result()
+}
+
+// TmplDelTemplate deletes a template
+func (c *Client) TmplDelTemplate(ctx context.Context, userEmail, templateName string) error {
+	templateKey := c.buildKey(fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName))
+	return c.rdb.Del(ctx, templateKey).Err()
+}
+
+// TmplExistsTemplate checks if a template exists
+func (c *Client) TmplExistsTemplate(ctx context.Context, userEmail, templateName string) (bool, error) {
+	templateKey := c.buildKey(fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName))
+	count, err := c.rdb.Exists(ctx, templateKey).Result()
 	if err != nil {
-		if err == redis.Nil {
-			return "", fmt.Errorf("key not found: %s", key)
-		}
-		return "", fmt.Errorf("failed to get key %s from Redis: %v", key, err)
-	}
-	return result, nil
-}
-
-// Del deletes one or more keys from Redis
-func (c *Client) Del(ctx context.Context, keys ...string) error {
-	return c.rdb.Del(ctx, keys...).Err()
-}
-
-// Exists checks if a key exists in Redis
-func (c *Client) Exists(ctx context.Context, key string) (bool, error) {
-	count, err := c.rdb.Exists(ctx, key).Result()
-	if err != nil {
-		return false, fmt.Errorf("failed to check key existence %s: %v", key, err)
+		return false, err
 	}
 	return count > 0, nil
+}
+
+// TmplSetList stores a template list (JSON array of template names)
+func (c *Client) TmplSetList(ctx context.Context, userEmail, jsonData string) error {
+	listKey := c.buildKey(fmt.Sprintf("pkg_templatelst_%s", userEmail))
+	return c.rdb.Set(ctx, listKey, jsonData, 0).Err()
+}
+
+// TmplGetList retrieves a template list (JSON array of template names)
+func (c *Client) TmplGetList(ctx context.Context, userEmail string) (string, error) {
+	listKey := c.buildKey(fmt.Sprintf("pkg_templatelst_%s", userEmail))
+	return c.rdb.Get(ctx, listKey).Result()
+}
+
+// TmplSetLog stores download log (JSON array of timestamps)
+func (c *Client) TmplSetLog(ctx context.Context, userEmail, templateName, jsonData string) error {
+	logKey := c.buildKey(fmt.Sprintf("%s_pkg_%s_dwnld", userEmail, templateName))
+	return c.rdb.Set(ctx, logKey, jsonData, 0).Err()
+}
+
+// TmplGetLog retrieves download log (JSON array of timestamps)
+func (c *Client) TmplGetLog(ctx context.Context, userEmail, templateName string) (string, error) {
+	logKey := c.buildKey(fmt.Sprintf("%s_pkg_%s_dwnld", userEmail, templateName))
+	return c.rdb.Get(ctx, logKey).Result()
+}
+
+// TmplGetMetadata retrieves download metadata by timestamp
+func (c *Client) TmplGetMetadata(ctx context.Context, userEmail, templateName string, timestamp int64) (string, error) {
+	metadataKey := c.buildKey(fmt.Sprintf("%s_pkg_%s_dwnld_%d", userEmail, templateName, timestamp))
+	return c.rdb.Get(ctx, metadataKey).Result()
+}
+
+// TmplSetMetadata stores download metadata with a specific timestamp
+func (c *Client) TmplSetMetadata(ctx context.Context, userEmail, templateName string, timestamp int64, jsonData string) error {
+	metadataKey := c.buildKey(fmt.Sprintf("%s_pkg_%s_dwnld_%d", userEmail, templateName, timestamp))
+	return c.rdb.Set(ctx, metadataKey, jsonData, 0).Err()
 }

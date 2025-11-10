@@ -56,8 +56,7 @@ func NewTemplateStorage(redisClient *redisclient.Client) *TemplateStorage {
 // StoreTemplate stores a package template in Redis
 func (ts *TemplateStorage) StoreTemplate(ctx context.Context, userEmail, templateName, yamlContent string) error {
 	// Store the template definition
-	templateKey := fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName)
-	if err := ts.redisClient.Set(ctx, templateKey, yamlContent, 0); err != nil {
+	if err := ts.redisClient.TmplSetTemplate(ctx, userEmail, templateName, yamlContent); err != nil {
 		return fmt.Errorf("failed to store template: %v", err)
 	}
 
@@ -71,8 +70,7 @@ func (ts *TemplateStorage) StoreTemplate(ctx context.Context, userEmail, templat
 
 // GetTemplate retrieves a package template from Redis
 func (ts *TemplateStorage) GetTemplate(ctx context.Context, userEmail, templateName string) (string, error) {
-	templateKey := fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName)
-	yamlContent, err := ts.redisClient.Get(ctx, templateKey)
+	yamlContent, err := ts.redisClient.TmplGetTemplate(ctx, userEmail, templateName)
 	if err != nil {
 		return "", fmt.Errorf("failed to get template: %v", err)
 	}
@@ -81,8 +79,7 @@ func (ts *TemplateStorage) GetTemplate(ctx context.Context, userEmail, templateN
 
 // ListTemplates returns all template names for a user
 func (ts *TemplateStorage) ListTemplates(ctx context.Context, userEmail string) ([]string, error) {
-	listKey := fmt.Sprintf("pkg_templatelst_%s", userEmail)
-	jsonData, err := ts.redisClient.Get(ctx, listKey)
+	jsonData, err := ts.redisClient.TmplGetList(ctx, userEmail)
 	if err != nil {
 		// If key doesn't exist, return empty list
 		return []string{}, nil
@@ -99,8 +96,7 @@ func (ts *TemplateStorage) ListTemplates(ctx context.Context, userEmail string) 
 // DeleteTemplate removes a package template from Redis
 func (ts *TemplateStorage) DeleteTemplate(ctx context.Context, userEmail, templateName string) error {
 	// Remove the template definition
-	templateKey := fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName)
-	if err := ts.redisClient.Del(ctx, templateKey); err != nil {
+	if err := ts.redisClient.TmplDelTemplate(ctx, userEmail, templateName); err != nil {
 		return fmt.Errorf("failed to delete template: %v", err)
 	}
 
@@ -114,8 +110,7 @@ func (ts *TemplateStorage) DeleteTemplate(ctx context.Context, userEmail, templa
 
 // TemplateExists checks if a template exists for a user
 func (ts *TemplateStorage) TemplateExists(ctx context.Context, userEmail, templateName string) (bool, error) {
-	templateKey := fmt.Sprintf("pkg_template_%s_%s", userEmail, templateName)
-	exists, err := ts.redisClient.Exists(ctx, templateKey)
+	exists, err := ts.redisClient.TmplExistsTemplate(ctx, userEmail, templateName)
 	if err != nil {
 		return false, fmt.Errorf("failed to check template existence: %v", err)
 	}
@@ -124,10 +119,8 @@ func (ts *TemplateStorage) TemplateExists(ctx context.Context, userEmail, templa
 
 // LogDownload logs a package download execution
 func (ts *TemplateStorage) LogDownload(ctx context.Context, userEmail, templateName string, timestamp int64) error {
-	logKey := fmt.Sprintf("%s_pkg_%s_dwnld", userEmail, templateName)
-
 	// Get existing log
-	existing, err := ts.redisClient.Get(ctx, logKey)
+	existing, err := ts.redisClient.TmplGetLog(ctx, userEmail, templateName)
 	var timestamps []int64
 	if err == nil {
 		// Parse existing timestamps
@@ -145,7 +138,7 @@ func (ts *TemplateStorage) LogDownload(ctx context.Context, userEmail, templateN
 		return fmt.Errorf("failed to marshal timestamps: %v", err)
 	}
 
-	if err := ts.redisClient.Set(ctx, logKey, string(jsonData), 0); err != nil {
+	if err := ts.redisClient.TmplSetLog(ctx, userEmail, templateName, string(jsonData)); err != nil {
 		return fmt.Errorf("failed to store download log: %v", err)
 	}
 
@@ -154,14 +147,12 @@ func (ts *TemplateStorage) LogDownload(ctx context.Context, userEmail, templateN
 
 // StoreDownloadMetadata stores detailed metadata for a package download
 func (ts *TemplateStorage) StoreDownloadMetadata(ctx context.Context, userEmail, templateName string, timestamp int64, metadata PackageMetadata) error {
-	metadataKey := fmt.Sprintf("%s_pkg_%s_dwnld_%d", userEmail, templateName, timestamp)
-
 	jsonData, err := json.Marshal(metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %v", err)
 	}
 
-	if err := ts.redisClient.Set(ctx, metadataKey, string(jsonData), 0); err != nil {
+	if err := ts.redisClient.TmplSetMetadata(ctx, userEmail, templateName, timestamp, string(jsonData)); err != nil {
 		return fmt.Errorf("failed to store download metadata: %v", err)
 	}
 
@@ -170,9 +161,7 @@ func (ts *TemplateStorage) StoreDownloadMetadata(ctx context.Context, userEmail,
 
 // GetDownloadMetadata retrieves metadata for a specific package download
 func (ts *TemplateStorage) GetDownloadMetadata(ctx context.Context, userEmail, templateName string, timestamp int64) (PackageMetadata, error) {
-	metadataKey := fmt.Sprintf("%s_pkg_%s_dwnld_%d", userEmail, templateName, timestamp)
-
-	jsonData, err := ts.redisClient.Get(ctx, metadataKey)
+	jsonData, err := ts.redisClient.TmplGetMetadata(ctx, userEmail, templateName, timestamp)
 	if err != nil {
 		return PackageMetadata{}, fmt.Errorf("failed to get download metadata: %v", err)
 	}
@@ -203,13 +192,12 @@ func (ts *TemplateStorage) addToTemplateList(ctx context.Context, userEmail, tem
 	templates = append(templates, templateName)
 
 	// Store updated list
-	listKey := fmt.Sprintf("pkg_templatelst_%s", userEmail)
 	jsonData, err := json.Marshal(templates)
 	if err != nil {
 		return fmt.Errorf("failed to marshal template list: %v", err)
 	}
 
-	if err := ts.redisClient.Set(ctx, listKey, string(jsonData), 0); err != nil {
+	if err := ts.redisClient.TmplSetList(ctx, userEmail, string(jsonData)); err != nil {
 		return fmt.Errorf("failed to store template list: %v", err)
 	}
 
@@ -232,13 +220,12 @@ func (ts *TemplateStorage) removeFromTemplateList(ctx context.Context, userEmail
 	}
 
 	// Store updated list
-	listKey := fmt.Sprintf("pkg_templatelst_%s", userEmail)
 	jsonData, err := json.Marshal(newTemplates)
 	if err != nil {
 		return fmt.Errorf("failed to marshal template list: %v", err)
 	}
 
-	if err := ts.redisClient.Set(ctx, listKey, string(jsonData), 0); err != nil {
+	if err := ts.redisClient.TmplSetList(ctx, userEmail, string(jsonData)); err != nil {
 		return fmt.Errorf("failed to store template list: %v", err)
 	}
 

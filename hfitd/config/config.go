@@ -47,7 +47,8 @@ type VolumeConfig struct {
 }
 
 type RedisConfig struct {
-	URL string
+	URL    string
+	Prefix string
 }
 
 type AuthConfig struct {
@@ -146,6 +147,11 @@ func LoadConfigFromEnv() (*Config, error) {
 		return nil, errors.New("REDIS_URL environment variable is required")
 	}
 
+	redisPrefix := os.Getenv("REDIS_PREFIX")
+	if redisPrefix == "" {
+		redisPrefix = "hfitd__"
+	}
+
 	config := &Config{
 		Server: ServerConfig{
 			Address: serverAddress,
@@ -154,7 +160,8 @@ func LoadConfigFromEnv() (*Config, error) {
 		DBMSProviders: dbConfigs,
 		Volumes:       volumeConfigs,
 		Redis: RedisConfig{
-			URL: redisURL,
+			URL:    redisURL,
+			Prefix: redisPrefix,
 		},
 		Auth: AuthConfig{
 			// JWT keys managed by admin server and stored in Redis
