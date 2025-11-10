@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.20] - 2025-11-10
+
+### 🚀 Features
+
+- Add window installers
+
 ## [0.9.19] - 2025-11-10
 
 ### 🚀 Features
