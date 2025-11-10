@@ -196,16 +196,7 @@ changelog:
       - '^docs:'
       - '^test:'
 
-# Windows installers for hfit client (testing tool)
-nsis:
-  - id: hfit-installer
-    name: "hfit-{{.Version}}-setup"
-    builds: [client]
-    license: LICENSE
-    description: "Hot Fixture Tool Client - Database fixture testing client"
-    script: installer/hfit.nsi
-
-# Optional: Chocolatey for developer convenience
+# Optional: Chocolatey for developer convenience  
 chocolateys:
   - name: hfit
     ids: [client]
