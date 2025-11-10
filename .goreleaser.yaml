@@ -196,6 +196,39 @@ changelog:
       - '^docs:'
       - '^test:'
 
+# Windows installers for hfit client (testing tool)
+nsis:
+  - id: hfit-installer
+    name: "hfit-{{.Version}}-setup"
+    builds: [client]
+    license: LICENSE
+    description: "Hot Fixture Tool Client - Database fixture testing client"
+    script: installer/hfit.nsi
+
+# Optional: Chocolatey for developer convenience
+chocolateys:
+  - name: hfit
+    ids: [client]
+    title: Hot Fixture Tool Client  
+    authors: Daniele Cruciani
+    summary: Command-line client for database fixture testing
+    description: |
+      Hot Fixture Tool (hfit) client for testing and managing database fixtures.
+      Connect to hfitd servers for database and file operations.
+    tags: database testing fixtures cli
+    license_url: https://github.com/danielecr/hot-fixture-tool/blob/main/LICENSE
+    api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
+    source_repo: "https://push.chocolatey.org/"
+
+# Scoop package for Windows developer tools
+scoops:
+  - repository:
+      owner: danielecr
+      name: scoop-bucket
+    description: "Hot Fixture Tool Client - Database fixture testing"
+    license: MIT
+    homepage: https://github.com/danielecr/hot-fixture-tool
+
 release:
   github:
     owner: danielecr
