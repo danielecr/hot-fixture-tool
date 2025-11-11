@@ -203,9 +203,12 @@ chocolateys:
     title: Hot Fixture Tool Client  
     authors: Daniele Cruciani
     summary: Command-line client for database fixture testing
+    project_url: https://github.com/danielecr/hot-fixture-tool
+    project_source_url: https://github.com/danielecr/hot-fixture-tool
     description: |
-      Hot Fixture Tool (hfit) client for testing and managing database fixtures.
-      Connect to hfitd servers for database and file operations.
+      Hot Fixture Tool (hfit) CLI for db and fs fixtures download.
+      Connect to hfitd servers, define package template, download package of fixtures.
+    release_notes: https://github.com/danielecr/hot-fixture-tool/releases/tag/{{.Version}}
     tags: database testing fixtures cli
     license_url: https://github.com/danielecr/hot-fixture-tool/blob/main/LICENSE
     api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
@@ -214,10 +217,10 @@ chocolateys:
 # Scoop package for Windows developer tools
 scoops:
   - ids: [hfit-package]
-    token: "{{ .Env.SCOOP_GITHUB_TOKEN }}"
     repository:
       owner: danielecr
       name: scoop-bucket
+      token: "{{ .Env.SCOOP_GITHUB_TOKEN }}"
     description: "Hot Fixture Tool Client - Database fixture testing"
     license: MIT
     homepage: https://github.com/danielecr/hot-fixture-tool

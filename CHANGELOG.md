@@ -8,18 +8,6 @@ All notable changes to this project will be documented in this file.
 
 ## [0.9.26] - 2025-11-11
 
-## [0.9.25] - 2025-11-11
-
-## [0.9.24] - 2025-11-11
-
-## [0.9.23] - 2025-11-10
-
-## [0.9.22] - 2025-11-10
-
-## [0.9.21] - 2025-11-10
-
-## [0.9.20] - 2025-11-10
-
 ### 🚀 Features
 
 - Add window installers
@@ -58,13 +46,9 @@ All notable changes to this project will be documented in this file.
 
 ## [0.9.17] - 2025-11-07
 
-## [0.9.16] - 2025-11-07
-
 ### 🐛 Bug Fixes
 
 - Fix github action release
-
-## [0.9.15] - 2025-11-07
 
 ### 🚀 Features
 

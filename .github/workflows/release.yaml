@@ -103,17 +103,29 @@ jobs:
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
           SCOOP_GITHUB_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
 
-      - name: Build and release (Windows - Chocolatey only)
+      - name: Release Chocolatey package only (Windows)
         if: runner.os == 'Windows'
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean --skip=sign,sbom,scoop,docker,nfpm
+          args: release --clean --skip=aur,aur-source,before,docker,homebrew,ko,makeself,nfpm,nix,notarize,publish,sbom,scoop,sign,snapcraft,winget
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USER: danielecr
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+
+      - name: Push Chocolatey package manually
+        if: runner.os == 'Windows'
+        run: |
+          $nupkg = Get-ChildItem -Path dist -Filter '*.nupkg' | Select-Object -First 1
+          if ($nupkg) {
+            choco push $nupkg.FullName --source https://push.chocolatey.org/ --api-key ${{ secrets.CHOCOLATEY_API_KEY }}
+          } else {
+            Write-Error 'No .nupkg file found in dist directory.'
+            exit 1
+          }
+        shell: pwsh
 
       - name: Generate build provenance (Linux only)
         if: runner.os == 'Linux'
