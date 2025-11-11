@@ -39,6 +39,7 @@ jobs:
           else
             echo "Tag ${{ github.ref_name }} found on main branch"
           fi
+        shell: bash
 
       - name: Set up Go
         uses: actions/setup-go@v5
