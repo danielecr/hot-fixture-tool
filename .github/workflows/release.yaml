@@ -104,7 +104,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean --skip=scoops,dockers_v2,nfpms,archives,signs,sboms
+          args: release --clean --skip=sign,sbom,scoop,docker,nfpm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USER: danielecr
