@@ -214,6 +214,7 @@ chocolateys:
 # Scoop package for Windows developer tools
 scoops:
   - ids: [hfit-package]
+    token: "{{ .Env.SCOOP_GITHUB_TOKEN }}"
     repository:
       owner: danielecr
       name: scoop-bucket
