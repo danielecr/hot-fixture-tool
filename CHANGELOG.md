@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.29] - 2025-11-12
+
+### 🐛 Bug Fixes
+
+- Chocolatey release fixes
+
 ## [0.9.28] - 2025-11-11
 
 ## [0.9.27] - 2025-11-11
