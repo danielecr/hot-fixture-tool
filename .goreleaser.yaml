@@ -208,7 +208,7 @@ chocolateys:
     description: |
       Hot Fixture Tool (hfit) CLI for db and fs fixtures download.
       Connect to hfitd servers, define package template, download package of fixtures.
-    release_notes: https://github.com/danielecr/hot-fixture-tool/releases/tag/{{.Version}}
+    release_notes: "https://github.com/danielecr/hot-fixture-tool/releases/tag/v{{ .Version }}"
     tags: database testing fixtures cli
     license_url: https://github.com/danielecr/hot-fixture-tool/blob/main/LICENSE
     api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
