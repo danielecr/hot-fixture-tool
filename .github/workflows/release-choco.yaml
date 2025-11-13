@@ -37,6 +37,9 @@ jobs:
         with:
           install-only: true
 
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0.20.9
+
       - name: Install Chocolatey CLI
         run: |
           Set-ExecutionPolicy Bypass -Scope Process -Force
