@@ -47,7 +47,7 @@ jobs:
         env:
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
           GITHUB_USER: ${{ github.repository_owner }}
-          GORELEASER_CURRENT_TAG: ${{ github.ref_name || github.event.inputs.tag }}
+          GORELEASER_CURRENT_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
       - name: Push Chocolatey Package
         run: |
