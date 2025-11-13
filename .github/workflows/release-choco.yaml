@@ -11,6 +11,10 @@ on:
         required: true
         default: ''
 
+permissions:
+  contents: write
+  id-token: write # needed for keyless signing
+
 jobs:
   release-choco:
     runs-on: windows-latest
@@ -36,6 +40,9 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           install-only: true
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.4.0
 
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@v0.20.9
