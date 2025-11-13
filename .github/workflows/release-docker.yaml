@@ -22,6 +22,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      tag_name: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,20 +31,25 @@ jobs:
           fetch-depth: 0  # Fetch full history for changelog generation
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Checkout tag
+        run: |
+          git fetch --tags
+          git checkout ${{ env.tag_name }}
+
       - name: Check if tag is on main branch
         run: |
           # Get the branch that contains this tag
-          TAG_BRANCH=$(git branch -r --contains ${{ github.ref_name }} | grep 'origin/main' | head -1)
+          TAG_BRANCH=$(git branch -r --contains ${{ env.tag_name }} | grep 'origin/main' | head -1)
           
           if [ -z "$TAG_BRANCH" ]; then
-            echo "Error: Tag ${{ github.ref_name }} is not on main branch"
+            echo "Error: Tag ${{ env.tag_name }} is not on main branch"
             echo "Available branches containing this tag:"
-            git branch -r --contains ${{ github.ref_name }}
+            git branch -r --contains ${{ env.tag_name }}
             echo ""
             echo "Releases can only be created from main branch"
             exit 1
           else
-            echo "Tag ${{ github.ref_name }} found on main branch"
+            echo "Tag ${{ env.tag_name }} found on main branch"
           fi
         shell: bash
 
@@ -87,7 +94,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USER: danielecr
-          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          GORELEASER_CURRENT_TAG: ${{ env.tag_name }}
           SCOOP_GITHUB_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
 
       - name: Generate build provenance
