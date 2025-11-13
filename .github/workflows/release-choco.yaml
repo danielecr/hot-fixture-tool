@@ -48,10 +48,11 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean --skip=aur,aur-source,before,docker,homebrew,ko,makeself,nfpm,nix,notarize,publish,sbom,scoop,sign,snapcraft,winget
+          args: release --clean --skip=docker,nfpm
         env:
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
           GITHUB_USER: ${{ github.repository_owner }}
+          SCOOP_GITHUB_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
       - name: Push Chocolatey Package
