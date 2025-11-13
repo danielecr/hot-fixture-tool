@@ -117,27 +117,6 @@ func (c *Client) ListTables(dbms, dbID string) ([]interface{}, error) {
 	return tables, nil
 }
 
-// ListRows lists rows in a specific table
-func (c *Client) ListRows(dbms, dbID, tableID string) ([]interface{}, error) {
-	resp, err := c.makeRequest("GET", fmt.Sprintf("/db/%s/%s/table/%s/rows", dbms, dbID, tableID))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var rows []interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return rows, nil
-}
-
 // ListFiles lists files in a volume
 func (c *Client) ListFiles(volume string) ([]interface{}, error) {
 	resp, err := c.makeRequest("GET", fmt.Sprintf("/files/%s/list", volume))
@@ -198,7 +177,7 @@ func (c *Client) StreamRows(dbms, dbID, tableID, filterpart string) error {
 	// Build the endpoint URL with optional filterpart parameter
 	endpoint := fmt.Sprintf("/db/%s/%s/table/%s/rows", dbms, dbID, tableID)
 	if filterpart != "" {
-		endpoint += fmt.Sprintf("?filterpart=%s", filterpart)
+		endpoint += fmt.Sprintf("?filterpart=%s", url.QueryEscape(filterpart))
 	}
 
 	req, err := http.NewRequest("GET", c.BaseURL+endpoint, nil)
