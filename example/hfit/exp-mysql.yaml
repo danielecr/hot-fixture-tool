@@ -1,0 +1,51 @@
+## Example of hfit package template YAML file
+hfitVersion: 1
+templateName: usecase_mysql
+projectName: project_mysql # typically the repository or project name
+packageName: basedata_$1
+prepare:
+  - setVar: dataid
+    from: input
+    source: $1
+  - setVar: usrId
+    from: hot-data
+    hdata:
+        type: dbquery
+        dbms: TEST_MYSQL
+        query: "SELECT User FROM mysql.user WHERE User='${dataid}' ORDER BY password_last_changed LIMIT 1"
+  #- setVar: fBaseName
+  #  from: hot-data
+  #  hdata:
+  #      type: volume
+  #      volume: vol1
+  #      glob: "*_{dataid}_{usrId}_*.txt"
+  #      # take the first in mtime desc order:
+  #      sort: "mtime|desc"
+  #      # extract the first number of filename as fBaseName value
+  #      regex_replace: "/([0-9]+).*/$1/"
+exports:
+  dbcreate.sql:
+    type: dbcreate
+    data:
+      dbms: TEST_MYSQL
+      tablelist:
+        - user
+  tablegroup1.create.sql:
+    type: table-create
+    data:
+      dbms: TEST_MYSQL
+      table: mysql.user
+      tablelist:
+        - mysql.user
+      option: <dropcreate|ifnotexists>
+  tabledata1.data.sql:
+    type: table-data
+    data:
+      dbms: TEST_MYSQL
+      table: mysql.user
+      filter: WHERE user != ''
+  target-filename.txt:
+    type: file
+    data:
+      volume: VOLUME1
+      path: hfit/base-export.yaml

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -416,7 +417,7 @@ func (ptp *PackageTemplateProcessor) processExport(ctx context.Context, exportNa
 	switch export.Type {
 	case "dbcreate":
 		return ptp.processDBCreateExport(export, exportFile)
-	case "create-table":
+	case "table-create":
 		return ptp.processTableCreateExport(export, exportFile)
 	case "table-data":
 		return ptp.processTableDataExport(export, exportFile)
@@ -502,8 +503,12 @@ func (ptp *PackageTemplateProcessor) processDBCreateExport(export ExportDefiniti
 		return fmt.Errorf("failed to get DSN for %s: %v", dbms, err)
 	}
 
+	log.Println("DSN for DBCreateExport:", dsn)
+
+	dbType := ptp.config.DBMSProviders[dbms].Type
+	log.Println("DB Type for DBCreateExport:", dbType)
 	// Use appropriate export module based on DBMS
-	switch strings.ToLower(dbms) {
+	switch strings.ToLower(dbType) {
 	case "mysql":
 		return mysqlexp.ExportDatabase(dsn, exportFile)
 	case "postgresql", "postgres":
@@ -536,14 +541,16 @@ func (ptp *PackageTemplateProcessor) processTableCreateExport(export ExportDefin
 		return fmt.Errorf("failed to get DSN for %s: %v", dbms, err)
 	}
 
+	dbType := ptp.config.DBMSProviders[dbms].Type
+	log.Println("DB Type for TableCreateExport:", dbType)
 	// Use appropriate export module based on DBMS
-	switch strings.ToLower(dbms) {
+	switch strings.ToLower(dbType) {
 	case "mysql":
 		return mysqlexp.ExportTable(dsn, tableName, exportFile)
 	case "postgresql", "postgres":
 		return pgexp.ExportTable(dsn, tableName, exportFile)
 	default:
-		return fmt.Errorf("unsupported DBMS: %s", dbms)
+		return fmt.Errorf("TableCreateExport unsupported DBMS: %s", dbms)
 	}
 }
 
@@ -565,8 +572,10 @@ func (ptp *PackageTemplateProcessor) processTableDataExport(export ExportDefinit
 		return fmt.Errorf("failed to get DSN for %s: %v", dbms, err)
 	}
 
+	dbType := ptp.config.DBMSProviders[dbms].Type
+	log.Println("DB Type for TableDataExport:", dbType)
 	// Use appropriate export module based on DBMS
-	switch strings.ToLower(dbms) {
+	switch strings.ToLower(dbType) {
 	case "mysql":
 		return mysqlexp.ExportTableData(dsn, tableName, exportFile)
 	case "postgresql", "postgres":
@@ -627,21 +636,26 @@ func (ptp *PackageTemplateProcessor) processFileExport(export ExportDefinition, 
 func (ptp *PackageTemplateProcessor) getDSN(dbms string) (string, error) {
 	_, err := ptp.databaseManager.GetConnection(dbms)
 	if err != nil {
+		log.Println("Getting connection for DSN retrieval:", dbms)
 		return "", fmt.Errorf("failed to get database connection: %v", err)
 	}
 
-	// For now, we need to reconstruct the DSN from the connection
-	// This is a simplified approach - in a real implementation,
-	// you might want to store the original DSN in the database manager
-	switch strings.ToLower(dbms) {
+	dbmsConfig, exists := ptp.config.DBMSProviders[dbms]
+	if !exists {
+		return "", fmt.Errorf("DBMS %s not found in configuration", dbms)
+	}
+
+	dbType := dbmsConfig.Type
+	log.Println("DB Type for DSN retrieval:", dbType)
+	switch strings.ToLower(dbType) {
 	case "mysql":
 		// MySQL DSN format: "user:password@tcp(host:port)/database"
-		// This is a placeholder - you'll need to implement proper DSN reconstruction
-		return "user:password@tcp(localhost:3306)/database", nil
+		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
+			dbmsConfig.User, dbmsConfig.Password, dbmsConfig.Host, dbmsConfig.Port, dbmsConfig.Name), nil
 	case "postgresql", "postgres":
 		// PostgreSQL DSN format: "user=username password=password host=hostname port=5432 dbname=database sslmode=disable"
-		// This is a placeholder - you'll need to implement proper DSN reconstruction
-		return "user=username password=password host=localhost port=5432 dbname=database sslmode=disable", nil
+		return fmt.Sprintf("user=%s password=%s host=%s port=%d dbname=%s sslmode=disable",
+			dbmsConfig.User, dbmsConfig.Password, dbmsConfig.Host, dbmsConfig.Port, dbmsConfig.Name), nil
 	default:
 		return "", fmt.Errorf("unsupported DBMS: %s", dbms)
 	}
