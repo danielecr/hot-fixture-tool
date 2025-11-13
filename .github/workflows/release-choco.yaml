@@ -21,6 +21,11 @@ jobs:
         with:
           fetch-depth: 0  # Fetch full history for changelog generation
           token: ${{ secrets.GITHUB_TOKEN }}
+    
+      - name: Checkout tag
+        run: |
+          git fetch --tags
+          git checkout ${{ github.event.inputs.tag || github.ref_name }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
