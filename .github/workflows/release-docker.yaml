@@ -1,5 +1,5 @@
 
-name: Release
+name: Release Docker
 
 on:
   push:
@@ -83,7 +83,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean --skip=chocolatey,archive,scoop,winget,checksum,sign
+          args: release --clean --skip=chocolatey,archive,scoop,winget,sign
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USER: danielecr
