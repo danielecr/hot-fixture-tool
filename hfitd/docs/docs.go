@@ -877,6 +877,14 @@ const docTemplate = `{
                     "templates"
                 ],
                 "summary": "List package templates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter templates by prefix",
+                        "name": "filter",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "List of template objects",

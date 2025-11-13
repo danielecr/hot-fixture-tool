@@ -593,6 +593,11 @@ paths:
       consumes:
       - application/json
       description: Get list of all package templates for the authenticated user
+      parameters:
+      - description: Filter templates by prefix
+        in: query
+        name: filter
+        type: string
       produces:
       - application/json
       responses:

@@ -58,6 +58,7 @@ func NewTemplateHandlers(cfg *config.Config, databaseManager *db.DatabaseManager
 //	@Tags			templates
 //	@Accept			json
 //	@Produce		json
+//	@Param			filter		query		string	false	"Filter templates by prefix"
 //	@Success		200		{array}		object	"List of template objects"
 //	@Failure		401		{object}	map[string]string	"Unauthorized"
 //	@Failure		500		{object}	map[string]string	"Internal server error"
@@ -70,7 +71,9 @@ func (h *TemplateHandlers) GetTemplates(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err := HandleListTemplates(w, r, userEmail, h.templateStorage)
+	filter := r.URL.Query().Get("filter")
+
+	err := HandleListTemplates(w, r, userEmail, filter, h.templateStorage)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -156,6 +159,12 @@ func (h *TemplateHandlers) CreateTemplate(w http.ResponseWriter, r *http.Request
 		http.Error(w, "templateName field required in YAML", http.StatusBadRequest)
 		return
 	}
+	projectName, ok := templateContent["projectName"].(string)
+	if !ok || projectName == "" {
+		http.Error(w, "projectName field required in YAML", http.StatusBadRequest)
+		return
+	}
+	templateName = fmt.Sprintf("%s-%s", projectName, templateName)
 
 	// Validate hfitVersion
 	if version, ok := templateContent["hfitVersion"]; !ok {
@@ -229,6 +238,12 @@ func (h *TemplateHandlers) UpdateTemplate(w http.ResponseWriter, r *http.Request
 		http.Error(w, "templateName field required in YAML", http.StatusBadRequest)
 		return
 	}
+	projectName, ok := templateContent["projectName"].(string)
+	if !ok || projectName == "" {
+		http.Error(w, "projectName field required in YAML", http.StatusBadRequest)
+		return
+	}
+	templateName = fmt.Sprintf("%s-%s", projectName, templateName)
 
 	// Validate hfitVersion
 	if version, ok := templateContent["hfitVersion"]; !ok {
@@ -302,6 +317,13 @@ func (h *TemplateHandlers) PatchTemplate(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "templateName field required in YAML", http.StatusBadRequest)
 		return
 	}
+
+	projectName, ok := patchContent["projectName"].(string)
+	if !ok || projectName == "" {
+		http.Error(w, "projectName field required in YAML", http.StatusBadRequest)
+		return
+	}
+	templateName = fmt.Sprintf("%s-%s", projectName, templateName)
 
 	// Get existing template
 	existingYAML, err := h.templateStorage.GetTemplate(r.Context(), userEmail, templateName)
@@ -455,10 +477,23 @@ func SetupTemplateRoutes(router *mux.Router, cfg *config.Config, databaseManager
 /*
 * HandleListTemplates lists all templates for a user
  */
-func HandleListTemplates(w http.ResponseWriter, r *http.Request, userEmail string, templateStorage *tmplstorage.TemplateStorage) error {
+func HandleListTemplates(w http.ResponseWriter, r *http.Request, userEmail string, filter string, templateStorage *tmplstorage.TemplateStorage) error {
 	templates, err := templateStorage.ListTemplates(r.Context(), userEmail)
 	if err != nil {
 		return fmt.Errorf("failed to list templates: %v", err)
+	}
+
+	// Apply filter if provided
+	// filter is doing filtering by prefix (that in general is the projectName)
+	if filter != "" {
+		var filtered []string
+		for _, t := range templates {
+			// if t is a prefix match
+			if len(t) >= len(filter) && t[:len(filter)] == filter {
+				filtered = append(filtered, t)
+			}
+		}
+		templates = filtered
 	}
 
 	w.Header().Set("Content-Type", "application/json")
