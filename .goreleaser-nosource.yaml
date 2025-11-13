@@ -1,0 +1,233 @@
+version: 2
+project_name: hot-fixture-tool
+builds:
+  - id: server
+    dir: hfitd
+    main: ./cmd/hfitd/main.go
+    binary: hfitd
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+  - id: cli-admin
+    dir: hfitd
+    main: ./cmd/hfitd-cli/main.go
+    binary: hfitd-cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+  - id: client
+    dir: hfit
+    main: ./main.go
+    binary: hfit
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
+
+archives:
+  - id: hfitd-package
+    name_template: "hfitd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds:
+      - server
+      - cli-admin
+    files:
+      - LICENSE
+      - README.md
+      - src: "hfitd/systemd/hfitd.service"
+        dst: "systemd/hfitd.service"
+      - src: "hfitd/systemd/hfitd.socket"  
+        dst: "systemd/hfitd.socket"
+      - src: "hfitd/systemd/hfitd.conf"
+        dst: "systemd/hfitd.conf"
+      - src: "hfitd/.env.example"
+        dst: "hfitd.env.example"
+  - id: hfit-package  
+    name_template: "hfit_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds:
+      - client
+    files:
+      - LICENSE
+      - README.md
+
+nfpms:
+  - id: hfitd-linux-package
+    package_name: hfitd
+    file_name_template: "hfitd_{{ .Version }}_{{ .Arch }}"
+    builds:
+      - server
+      - cli-admin
+    vendor: Daniele Cruciani
+    homepage: https://github.com/danielecr/hot-fixture-tool
+    maintainer: Daniele Cruciani <daniele@smartango.com>
+    description: |-
+      Hot Fixture Tool Daemon - Database fixture management server
+      A powerful tool for managing database fixtures and test data.
+    license: "LICENSE"
+    formats:
+      - deb
+      - rpm
+    contents:
+      - src: "hfitd/systemd/hfitd.service"
+        dst: "/lib/systemd/system/hfitd.service"
+      - src: "hfitd/systemd/hfitd.socket"
+        dst: "/lib/systemd/system/hfitd.socket"  
+      - src: "hfitd/systemd/hfitd.conf"
+        dst: "/usr/lib/tmpfiles.d/hfitd.conf"
+      - src: "hfitd/.env.example"
+        dst: "/etc/hfitd/.env"
+        type: config|noreplace
+    scripts:
+      preinstall: "hfitd/scripts/preinstall.sh"
+      postinstall: "hfitd/scripts/postinstall.sh"
+      preremove: "hfitd/scripts/preremove.sh"
+      postremove: "hfitd/scripts/postremove.sh"
+  - id: hfit-linux-package
+    package_name: hfit
+    file_name_template: "hfit_{{ .Version }}_{{ .Arch }}"
+    builds:
+      - client
+    vendor: Daniele Cruciani
+    homepage: https://github.com/danielecr/hot-fixture-tool
+    maintainer: Daniele Cruciani <daniele@smartango.com>
+    description: |-
+      Hot Fixture Tool Client - Database fixture management client
+      Command-line client for managing database fixtures and test data.
+    license: "LICENSE"
+    formats:
+      - deb
+      - rpm
+
+# Creates checksums of all archives and binaries
+checksum:
+  name_template: "checksums.txt"
+
+# Creates SBOMs of all archives using syft
+sboms:
+  - artifacts: archive
+  - id: source
+    artifacts: source
+
+# Signs the checksum file with cosign
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+# Creates source tarball
+source:
+  enabled: false
+
+dockers_v2:
+  - id: hfitd
+    dockerfile: hfitd/Dockerfile
+    ids:
+      - server
+      - cli-admin
+    images:
+      - "ghcr.io/{{ .Env.GITHUB_USER }}/hfitd"
+    tags:
+      - "{{ .Version }}"
+      - "latest"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    extra_files:
+      - "hfitd/.env.example"
+    labels:
+      "org.opencontainers.image.title": "{{.ProjectName}}"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.created": "{{.Date}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.source": "{{.GitURL}}"
+      "org.opencontainers.image.authors": "Daniele Cruciani <daniele@smartango.com>"
+      "org.opencontainers.image.description": "Hot Fixture Tool Daemon with attestations and signing"
+
+# Signs Docker images with cosign
+docker_signs:
+  - cmd: cosign
+    args:
+      - "sign"
+      - "${artifact}"
+      - "--yes"
+    output: true
+
+changelog:
+  sort: desc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+# Optional: Chocolatey for developer convenience  
+chocolateys:
+  - name: hfit
+    ids: [hfit-package]
+    title: Hot Fixture Tool Client  
+    authors: Daniele Cruciani
+    summary: Command-line client for database fixture testing
+    project_url: https://github.com/danielecr/hot-fixture-tool
+    project_source_url: https://github.com/danielecr/hot-fixture-tool
+    description: |
+      Hot Fixture Tool (hfit) CLI for db and fs fixtures download.
+      Connect to hfitd servers, define package template, download package of fixtures.
+    release_notes: "https://github.com/danielecr/hot-fixture-tool/releases/tag/v{{ .Version }}"
+    tags: database testing fixtures cli
+    license_url: https://github.com/danielecr/hot-fixture-tool/blob/main/LICENSE
+    api_key: "{{ .Env.CHOCOLATEY_API_KEY }}"
+    source_repo: "https://push.chocolatey.org/"
+
+# Scoop package for Windows developer tools
+scoops:
+  - ids: [hfit-package]
+    repository:
+      owner: danielecr
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_GITHUB_TOKEN }}"
+    description: "Hot Fixture Tool Client - Database fixture testing"
+    license: MIT
+    homepage: https://github.com/danielecr/hot-fixture-tool
+    goamd64: v1
+
+release:
+  github:
+    owner: danielecr
+    name: hot-fixture-tool

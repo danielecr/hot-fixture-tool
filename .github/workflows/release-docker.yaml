@@ -90,7 +90,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean --skip=chocolatey,archive,scoop,winget,sign
+          args: release --clean -f .goreleaser-nosource.yaml --skip=chocolatey,archive,scoop,winget,sign
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USER: danielecr
