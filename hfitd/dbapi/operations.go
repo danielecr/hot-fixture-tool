@@ -89,10 +89,10 @@ func CheckTableExists(conn *sql.DB, dbms string, dbid string, tableid string) (b
 /*
 * getTables retrieves the list of tables for a specific database.
  */
-func GetTables(conn *sql.DB, dbms string, dbid string) ([]string, error) {
+func GetTables(conn *sql.DB, dbtype string, dbid string) ([]string, error) {
 	var query string
 
-	switch strings.ToLower(dbms) {
+	switch strings.ToLower(dbtype) {
 	case "mysql":
 		query = fmt.Sprintf("SELECT table_name FROM information_schema.tables WHERE table_schema = '%s'", dbid)
 	case "postgres":
@@ -100,7 +100,7 @@ func GetTables(conn *sql.DB, dbms string, dbid string) ([]string, error) {
 		// This is a simplified version - in practice you might need a separate connection
 		query = "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
 	default:
-		return nil, fmt.Errorf("unsupported DBMS: %s", dbms)
+		return nil, fmt.Errorf("unsupported dbtype: %s", dbtype)
 	}
 
 	rows, err := conn.Query(query)

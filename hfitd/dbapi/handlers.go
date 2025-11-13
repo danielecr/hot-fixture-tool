@@ -128,7 +128,8 @@ func (h *DatabaseHandlers) GetTables(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tables, err := GetTables(conn, dbms, dbid)
+	dbmsType := h.databaseManager.Db_types[dbms]
+	tables, err := GetTables(conn, dbmsType, dbid)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
