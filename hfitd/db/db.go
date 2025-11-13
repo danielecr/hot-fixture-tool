@@ -13,6 +13,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log"
 
 	"hfitd/config"
 
@@ -22,6 +23,7 @@ import (
 
 type DatabaseManager struct {
 	connections map[string]*sql.DB
+	Db_types    map[string]string
 	configs     map[string]config.DatabaseConfig
 }
 
@@ -29,6 +31,7 @@ type DatabaseManager struct {
 func NewDatabaseManager(dbConfigs map[string]config.DatabaseConfig) (*DatabaseManager, error) {
 	manager := &DatabaseManager{
 		connections: make(map[string]*sql.DB),
+		Db_types:    make(map[string]string),
 		configs:     dbConfigs,
 	}
 
@@ -50,8 +53,8 @@ func createConnection(cfg config.DatabaseConfig) (*sql.DB, error) {
 			cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Name)
 	case "mysql":
 		driverName = "mysql"
-		connStr = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
-			cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Name)
+		connStr = fmt.Sprintf("%s:%s@tcp(%s:%d)/",
+			cfg.User, cfg.Password, cfg.Host, cfg.Port)
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", cfg.Type)
 	}
@@ -92,11 +95,15 @@ func (dm *DatabaseManager) GetConnection(providerName string) (*sql.DB, error) {
 		return nil, fmt.Errorf("database provider '%s' not found", providerName)
 	}
 
+	log.Println("Connecting to database provider:", cfg)
+
 	// Create connection on demand
 	conn, err := createConnection(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to %s: %v", providerName, err)
 	}
+
+	dm.Db_types[providerName] = cfg.Type
 
 	// Store connection for reuse
 	dm.connections[providerName] = conn

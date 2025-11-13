@@ -12,6 +12,7 @@ package dbapi
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -86,9 +87,12 @@ func (h *DatabaseHandlers) GetDatabases(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	dbmsType := h.databaseManager.Db_types[dbms]
+
 	// Get databases for this DBMS provider
-	databases, err := GetDatabases(conn, dbms, h.databaseManager)
+	databases, err := GetDatabases(conn, dbmsType, h.databaseManager)
 	if err != nil {
+		log.Println("Error getting databases:", err)
 		apiErr := apierrors.NewDBConnectionError(dbms, err)
 		apierrors.WriteErrorResponse(w, apiErr)
 		return
