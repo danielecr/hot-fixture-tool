@@ -542,7 +542,7 @@ func (ptp *PackageTemplateProcessor) processTableCreateExport(export ExportDefin
 	}
 
 	dbType := ptp.config.DBMSProviders[dbms].Type
-	log.Println("DB Type for TableCreateExport:", dbType)
+	log.Println("DB Type for TableCreateExport:", dbType, dsn)
 	// Use appropriate export module based on DBMS
 	switch strings.ToLower(dbType) {
 	case "mysql":

@@ -90,6 +90,61 @@ An application become "legacy" after 5 or 6 year of development, so this tool is
 
 ## Usage
 
+NOTE: Workflow and command-line is a **WIP**, until a 1.0^ is not released, the `hitVersion` used in template is subject to changes. Something is implemented, something is just planned, some plans are subject to changes.
+
+In a ideal world, when a repository containing a service that interacts with databases and/or with files, what a developer want to know is that the patch is sending is going to work. Unit test and mocked libraries, are not enough. Hfit helps by 3 simple commands:
+
+1. `hfit login`, and wait for user if private key is password protected
+2. `hfit data-download`, (below is called pack-values), download all data
+3. Data is stored into `hfit-data/*` folder, to be imported into local dbms or local fs, use another tool.
+
+Data in each packages has a folder `METADATA` that contains details about data format and export timestamps.
+
+Why multipackage? One can define a single package. But multi package are handly for partial import and integration of new fixture, for example 
+
+### Package and package templates
+
+A package template is what you need to define and send to the hfitd server.
+
+**Package template structure**:
+- prepare: Where input is processed. Input is an array of values
+- exports: defines which data is packed into the package and how
+
+### Template names
+
+Each time a template is uploaded, a name is assigned to that template.
+The name schema is {{ .projectName }}-{{ .templateName }}
+
+### Templates and replacements
+
+A pack-download expect you specify a template-name and an array of values. Array of values is used in prepare stage to define variables used in exports.
+
+To easy the maintainance of hfit-data folder, templates are stored into a folder `templates/`, values are stored into a file `values.yaml`.
+
+The `values.yaml` contains:
+```
+proj1-tmplname1:
+  - 21321
+  - root
+  - data
+proj2-tmplame2:
+  - 2
+```
+
+So the command
+
+> hfit pack-values
+
+or
+
+> hfit pack-values -f values.yaml
+
+download all packages listed on `values.yaml` with the values defined as array. While
+
+> hfit pack-value proj1-tmplname1
+
+Will download the proj1-tmplname1 template
+
 - create a folder on your service repo: `mkdir hfit-data; cd hfit-data`
 - keep your hot-export-package.yaml definition in files stored in the repo.
 - run hfit to download data based on hot-export-package.yaml definition, into a target folder

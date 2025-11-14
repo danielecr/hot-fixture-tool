@@ -16,9 +16,10 @@ package mysqlexp
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
-	"time"
+	"strings"
 
 	"github.com/aliakseiz/go-mysqldump"
 	_ "github.com/go-sql-driver/mysql"
@@ -59,24 +60,36 @@ func ExportDatabase(dsn, exportPath string) error {
 // ExportTable exports the table creation SQL for a specific table to the specified file
 func ExportTable(dsn, tableName, exportPath string) error {
 	// Open database connection
+	log.Println("ExportTable: opening database connection", dsn)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return fmt.Errorf("failed to open database connection: %v", err)
 	}
 	defer db.Close()
 
+	// split tableName into database and table if it contains a dot
+	var dbName, tblName string
+	parts := strings.SplitN(tableName, ".", 2)
+	if len(parts) == 2 {
+		dbName = parts[0]
+		tblName = parts[1]
+	} else {
+		tblName = tableName
+	}
+	log.Println("ExportTable:", dbName, tblName)
 	// For individual table export, we need to use the CreateTable method
 	tempDir := filepath.Dir(exportPath)
-	filename := fmt.Sprintf("table_%s_%d", tableName, time.Now().Unix())
+	//filename := fmt.Sprintf("table_%s_%d", tableName, time.Now().Unix())
+	filename := fmt.Sprintf("table_%s_20060102T150405", tableName)
 
-	dumper, err := mysqldump.Register(db, tempDir, filename, "")
+	dumper, err := mysqldump.Register(db, tempDir, filename, dbName)
 	if err != nil {
 		return fmt.Errorf("failed to register mysqldump: %v", err)
 	}
 	defer dumper.Close()
 
 	// Create table struct and get CREATE TABLE statement
-	table, err := dumper.CreateTable("", tableName)
+	table, err := dumper.CreateTable(dbName, tblName)
 	if err != nil {
 		return fmt.Errorf("failed to create table struct: %v", err)
 	}
